@@ -1,6 +1,6 @@
 {
   "layout": "Herdr-Virgile",
-  "exporte_le": "2026-11-16 15:02",
+  "exporte_le": "2026-11-16 16:31",
   "herdr_app": "0.1.12",
   "mods": [
     "tabs-vault",
@@ -8,6 +8,7 @@
     "contexte",
     "alertes",
     "cache",
+    "profile",
     "spaces-virgile",
     "agents-virgile",
     "pane-chat",
@@ -37,6 +38,9 @@
       "agents.sort",
       "contexte.reduit",
       "contexte.ressources.reduit",
+      "profile.all",
+      "profile.collapsed",
+      "profile.view",
       "space.colors",
       "spaces-virgile",
       "spaces-virgile.options",

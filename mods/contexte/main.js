@@ -15,6 +15,10 @@
 // arrêtables. Les sous-agents ont leur propre section.
 // Ressources : CPU, mémoire et réseau de l'arbre de processus de l'agent et de sa machine entière, toutes
 // les 3 s (ressources.js, commun avec le kanban d'agents-virgile) ; réduite à deux lignes comme Contexte.
+// Profile (in English, at the user's request): the harness-profiler plugin's trace (profile.js, shared with
+// the Profile popup): inline and forked skills, agents, durations, tokens, failures, compactions.
+// Collapsible like Context (collapsed to its summary by default; click the title). "Sequence" and "Details"
+// open the popup on the sequence diagram or the tree. Read every 3 s while the trace grows.
 // Tout ne se lit que quand le panneau est à l'écran (et tout de suite quand il y revient).
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, Scrollbar } from "gpui-base";
@@ -25,10 +29,12 @@ import { cible, session, affiche, dollars, duree, dureeCourte, milliers } from "
 import { EtatCache, ORANGE, VERT } from "./cache-etat.js";
 import { SousAgents } from "./sous-agents.js";
 import { SandboxesSbx } from "./sbx.js";
+import { Profile, sectionRows, sectionLine } from "./profile.js";
 import { Mesures, mesurer, octets, debit, pourcent, detail, detailMachine, resume, resumeMachine } from "./ressources.js";
 
 const ID = "contexte";              // le mod et son bloc dans panel-body (le panneau s'appelle Session)
 const REDUIT = "contexte.reduit";   // section Contexte réduite à sa barre (persisté ; réduite par défaut)
+const PROFILE_COLLAPSED = "profile.collapsed"; // Profile section collapsed to its summary (persisted; collapsed by default)
 const RES_REDUIT = "contexte.ressources.reduit"; // section Ressources réduite à deux lignes (persisté ; réduite par défaut)
 
 // Les tâches terminées, comptées une fois chacune (par appel ou par tâche) dans le journal lu.
@@ -122,6 +128,7 @@ export default class Session extends View {
     this.cache = new EtatCache();
     this.equipe = new SousAgents();
     this.sbx = new SandboxesSbx();
+    this.profile = new Profile(); // profile.js: the session's harness-profiler trace
     this.visible = false;
     this.quand = { session: 0, taches: 0, notif: 0, res: 0 };
     this.mesures = new Mesures(); // ressources.js : CPU, mémoire et réseau de l'arbre de processus de l'agent
@@ -142,6 +149,7 @@ export default class Session extends View {
     if (this.session && (neuf || m - this.cache.dernierTour >= 10000)) this.lireCache(cx);
     if (this.session && (neuf || this.equipe.du(m))) this.lireAgents(cx);
     if (this.session && (neuf || m - this.sbx.dernierTour >= 15000)) this.lireSbx(cx);
+    if (this.session && (neuf || this.profile.due(m))) this.readProfile(cx);
     if (this.session?.pid && (neuf || m - this.quand.res >= 3000)) this.lireRessources(cx);
     // Les durées avancent chaque seconde quand quelque chose tourne ; le compte à rebours du cache, à la demi-minute.
     if (this.enCours().length || this.equipe.enCours().length || m - this.quand.notif >= 30000) { this.quand.notif = m; cx.notify(); }
@@ -152,7 +160,7 @@ export default class Session extends View {
     if (!a || a === this.addr) return;
     this.addr = a; this.session = null; this.donnees = null; this.tailleLue = -1;
     this.erreur = null; this.erreurCtx = null; this.note = null; this.res = null; this.resM = null;
-    this.cache.viser(null); this.equipe.viser(null); this.sbx.viser(null);
+    this.cache.viser(null); this.equipe.viser(null); this.sbx.viser(null); this.profile.target(null);
     this.lecteur = new ChatReader({ sh: (script, args, on) => exec("sh", ["-c", script, ...args], { on: on ?? null }) }, a);
     if (affiche(ID)) { this.rafraichir(cx); this.taches(cx); }
   }
@@ -231,13 +239,13 @@ export default class Session extends View {
         if (this.addr !== addr) return;
         if (s.erreur) {
           this.session = null; this.donnees = null; this.tailleLue = -1; this.erreur = s.erreur;
-          this.cache.viser(null); this.equipe.viser(null); this.sbx.viser(null);
+          this.cache.viser(null); this.equipe.viser(null); this.sbx.viser(null); this.profile.target(null);
           return;
         }
         const autre = !this.session || this.session.id !== s.id || this.session.machine !== s.machine;
         this.session = s; this.erreur = null;
-        this.cache.viser(s); this.equipe.viser(s); this.sbx.viser(s.id);
-        if (autre) { this.donnees = null; this.tailleLue = -1; this.erreurCtx = null; this.lireCache(cx); this.lireAgents(cx); this.lireSbx(cx); }
+        this.cache.viser(s); this.equipe.viser(s); this.sbx.viser(s.id); this.profile.target(s);
+        if (autre) { this.donnees = null; this.tailleLue = -1; this.erreurCtx = null; this.lireCache(cx); this.lireAgents(cx); this.lireSbx(cx); this.readProfile(cx); }
         cx.notify();
         if (!force && this.tailleLue === s.size) return;
         const argv = s.argv ?? [];
@@ -292,8 +300,25 @@ export default class Session extends View {
     });
   }
 
+  // The session's harness-profiler trace (what it gained).
+  readProfile(cx) {
+    if (this.readingProfile || !this.profile.session) return;
+    this.readingProfile = true;
+    this.profile.lastRead = Date.now();
+    cx.spawn(async (cx) => {
+      try { await this.profile.read(); } catch (e) { this.profile.error = String(e).slice(0, 200); } finally { this.readingProfile = false; cx.notify(); }
+    });
+  }
+
+  // Opens the Profile popup on one of its views.
+  openProfile(view) {
+    setShared("profile.view", view);
+    run("mod.open", { name: "profile" });
+  }
+
   toutRelire(cx) {
     this.lireSbx(cx);
+    this.readProfile(cx);
     this.rafraichir(cx, true);
     this.taches(cx);
     this.lireCache(cx);
@@ -420,6 +445,7 @@ export default class Session extends View {
     this.suivre(cx);
     const t = theme(), d = this.donnees, S = this.session, maintenant = Date.now();
     const reduit = (shared(REDUIT) ?? true) === true;
+    const profileCollapsed = (shared(PROFILE_COLLAPSED) ?? true) === true;
     const fenetre = d?.window, utilise = d?.used;
     const cats = d?.cats ?? [];
     const differe = (c) => /deferred/i.test(c.name);
@@ -549,7 +575,19 @@ export default class Session extends View {
             .child(sep())
             // Sous-agents (l'ancien panneau Équipe)
             .child(titre("Sous-agents"))
-            .children(this.equipe.elements(t, maintenant, this.sbx.elements(t, maintenant))))
+            .children(this.equipe.elements(t, maintenant, this.sbx.elements(t, maintenant)))
+            .child(sep())
+            // Profile (harness-profiler; collapsible like Context; the tree and the sequence diagram: Profile popup)
+            .child(h_flex().items_center().pr(14).gap(12)
+              .child(h_flex().id("profile-toggle").flex_1().px(14).pt(14).pb(8).gap(6).items_center().cursor_pointer()
+                .tooltip(profileCollapsed ? "Show the call tree" : "Collapse to the summary")
+                .on_click((_e, cx) => { setShared(PROFILE_COLLAPSED, !profileCollapsed); cx.notify(); })
+                .child(div().text_size(12).font_semibold().text_color(t.muted).child("Profile"))
+                .child(svg(`mods/files/chevron-${profileCollapsed ? "right" : "down"}.svg`).size(12).flex_none().text_color(t.dim)))
+              .when(!this.profile.empty(), (x) => x.child(lien("profile-sequence", "Sequence", () => this.openProfile("sequence"))))
+              .child(lien("profile-details", "Details", () => this.openProfile("tree"))))
+            .when(profileCollapsed, (x) => x.child(sectionLine(t, this.profile)))
+            .when(!profileCollapsed, (x) => x.children(sectionRows(t, this.profile))))
           .child(Scrollbar.vertical("contexte-liste").absolute().inset_0()))
         .when(Boolean(this.note), (x) => x.child(div().px(12).py(6).text_size(11).text_color(t.dim).child(this.note))));
   }

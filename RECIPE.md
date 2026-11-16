@@ -1,6 +1,6 @@
 # Herdr-Virgile
 
-A herdr-app layout built from `main` 0.1.12, with a French UI. The left sidebar keeps Spaces and Agents. Spaces gains nested groups, per-space icons and colors, and per-terminal labels. Agents is pinned to the bottom of the sidebar, with groups, a kanban view and a "Rangés" (settled) section. The tab bar gets four buttons, **Files · Vault · Session · Alertes**, each opening its panel on the right. Agent panes get a **Trace | Terminal** switch that swaps the terminal for a chat-style view of the agent's session. The panels follow the Claude Code session of the active terminal: environment, CPU, memory and network use, context window, prompt cache, background jobs, sub-agents, held commands and notifications.
+A herdr-app layout built from `main` 0.1.12, with a French UI. The left sidebar keeps Spaces and Agents. Spaces gains nested groups, per-space icons and colors, and per-terminal labels. Agents is pinned to the bottom of the sidebar, with groups, a kanban view and a "Rangés" (settled) section. The tab bar gets four buttons, **Files · Vault · Session · Alertes**, each opening its panel on the right. Agent panes get a **Trace | Terminal** switch that swaps the terminal for a chat-style view of the agent's session. The panels follow the Claude Code session of the active terminal: environment, CPU, memory and network use, context window, prompt cache, background jobs, sub-agents, held commands and notifications, plus a **Profile** of the session's skill and agent calls (from the harness-profiler plugin) with a native sequence diagram.
 
 ## What you see
 
@@ -67,7 +67,11 @@ Left to right: a 301px sidebar, then the work column.
   - the context window, from `claude -p /context`;
   - a cache summary, whose "Détails" button opens **Cache** as a 560px dialog: cache state, keepwarm buttons and the cold-send guard;
   - background jobs;
-  - sub-agents with model, tokens, cost and savvy-progress plan.
+  - sub-agents with model, tokens, cost and savvy-progress plan;
+  - **Profile** (English UI, unlike the rest): the harness-profiler trace of the session, folded to a one-line summary by default (click the title). Its "Sequence" and "Details" links open **Profile** (`profile`) as an 1100px dialog with two views:
+    - Tree: one row per skill or agent call (per tool call with "All calls"), with start, duration, a square-root duration bar and the tokens of the context it opened; a click unfolds arguments and result;
+    - Sequence: the plugin's sequence diagram redrawn natively, one lifeline per context. Lines and arrowheads are `window.paint_path` paths (`PathBuilder`), bars and labels are absolutely positioned divs. Rows are events in time order; contexts that never overlap share a column; only the last 400 rows are drawn.
+    - "Open in browser ↗" renders the plugin's own page on the agent's machine and opens it. Commands `profile.tree`, `profile.sequence`, `profile.all` and `profile.section` reach the shown popup.
 - **Alertes**:
   - Blast Radius: commands held by the plugin, answered by pressing 1 or 2 in the agent's terminal;
   - Règles: reflect-mod rules to accept, written to CLAUDE.md after checking the file did not change;
@@ -84,19 +88,21 @@ Left to right: a 301px sidebar, then the work column.
 - **Shipped mods it uses**: `workspace-chrome`, `files`, `workspace-status`.
 - **Its own mods** (folders in `mods/`):
   - `tabs-vault`, `spaces-virgile` and `agents-virgile` are copies of the shipped `tabs`, `spaces` and `agents` 0.1.12;
-  - `vault`, `contexte`, `cache` and `alertes` are new.
+  - `vault`, `contexte`, `cache`, `profile` and `alertes` are new. `profile` ports hp.js's context model and view.html's sequence layout from harness-profiler 0.2.2 (MIT, `LICENSE-harness-profiler`).
   - `pane-chat`, `chat`, `chat-models` and `chat-image` are Shepherdr's (MIT), in the Trace look of the author's fork, without the rest of Shepherdr. Their `addons.js` keeps only `chat` and `needs` on, which switches off voice, reactions, artifacts, browser and autopilot. Tasks, secrets and the coordinator have no switch; they stay out of reach because their tools (`herdr-task`, `herdr-secret`, `restart.sh`) aren't there. The task state icons are copied into `chat/tasks-icons/` and the artifacts icon into each mod.
 - **Shared state**:
   - `shared("spaces-virgile")` and `shared("agents-virgile")` hold the group trees;
   - `agents-virgile.replie`, `.kanban.compact`, `.ranges.ouvert` and `.ranges.auto` hold the Agents settings;
   - `spaces-virgile.height` is published so that Agents can cap its height;
+  - `profile.collapsed`, `profile.view` and `profile.all` hold the Profile settings;
   - `space.colors`, `agents.sort` and `workspace.panels` are shared with the shipped mods.
 - **herdr functions used**:
   - state: `agents()`, `terminals()`, `panes()`, `spaces()`, `focused()`, `shared` / `setShared`, `layout()`, `settings()`, `theme()`;
   - views and agent order: `openOverlay`, `setAgentOrder`;
   - commands: `nextCommand()`, and `run()` with `layout.resize`, `layout.select`, `layout.show`, `layout.hide`, `pane.focus`, `terminal.peek`, `terminal.pin`, `tab.settle`, `tab.unsettle`, `tab.rename`, `space.new`, `space.move`, `space.rename`, `agent.focus`, `mod.open`.
 - **Programs it runs** on the agent's machine, through `exec` and `hc exec`:
-  - `sh` and `awk`, which read `~/.claude/sessions/`, `~/.claude/projects/*/*.jsonl`, `~/.claude/settings.json` and `~/.claude/plugins/store/`;
+  - `sh` and `awk`, which read `~/.claude/sessions/`, `~/.claude/projects/*/*.jsonl` (and each session's `subagents/`), `~/.claude/settings.json`, `~/.claude/plugins/store/`, `~/.claude/plugins/installed_plugins.json` and the harness-profiler traces in `<git root>/.harness-profile/`;
+  - the plugin's `hp.sh tree <session> --format html` for "Open in browser", then `open` (`xdg-open` on Linux) on this machine;
   - `claude -p /context --resume <id> --no-session-persistence`. If `CLAUDE_CODE_OAUTH_TOKEN` is unset, it reads `~/.config/claude/oauth-token` for that command only;
   - `ps`, `nettop`, `netstat` and `vm_stat` on macOS; `/proc`, `ss` and `/sys/fs/cgroup` on Linux;
   - `hc send`, `hc read` and `hc keys` for `/keepwarm`, `/cache-tax` and Blast Radius answers.
@@ -105,7 +111,8 @@ Left to right: a 301px sidebar, then the work column.
   - savvy-progress: sub-agent plans;
   - cache-tax: keepwarm and the guard;
   - reflect-mod: Règles;
-  - blast-radius: held commands. Its marketplace is in `claude-plugins/playground-mods`.
+  - blast-radius: held commands. Its marketplace is in `claude-plugins/playground-mods`;
+  - harness-profiler (`afurmanov/harness-profiler`, needs Node 18+ on the machine): the Profile section and popup. A session started before it was installed records nothing until `/reload-plugins`.
 - **Art**:
   - Lucide 0.460 icons (ISC, `icons/LICENSE-lucide`).
   - `mods/contexte/core/` is Shepherdr's log reader (MIT, `core/LICENSE-shepherdr`).
@@ -129,11 +136,12 @@ Left to right: a 301px sidebar, then the work column.
 
 ## Done when
 
-- `HERDR_APP_HOME=<empty dir> herdr-app check mods/<mod>` passes for `tabs-vault`, `vault`, `contexte`, `alertes`, `cache`, `spaces-virgile` and `agents-virgile`.
+- `HERDR_APP_HOME=<empty dir> herdr-app check mods/<mod>` passes for `tabs-vault`, `vault`, `contexte`, `alertes`, `cache`, `profile`, `spaces-virgile` and `agents-virgile`.
 - `herdr-app do layout.switch '{"name":"Herdr-Virgile"}'` shows the layout: Spaces on top, Agents at the bottom, and the four panel buttons in the tab bar.
 - Clicking "Agents" folds the list to 42px with the per-status counts, and clicking again restores it.
 - `herdr-app do tab.settle --id <tab>` moves that tab's agents into Rangés, and `tab.unsettle` brings them back to their group.
 - `herdr-app do agents-virgile.kanban` opens the kanban with one card per agent. Pressing C toggles compact cards.
 - With a Claude Code session in the active tab, Session shows its model, its context window and its resources, and the tab takes the session's title.
+- With harness-profiler installed and a session that ran a skill or a subagent, Session › Profile shows its summary, and `herdr-app do mod.open '{"name":"profile"}'` then `herdr-app do profile.sequence` draws the sequence diagram.
 - On a Claude Code pane, clicking Trace swaps the terminal for the conversation in the same slot, and Terminal brings the terminal back.
 - `python3 installer.py --essai` lists the files it would copy and the `cmd-shift-y` key it would add, and writes nothing.
