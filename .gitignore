@@ -1,0 +1,3 @@
+.DS_Store
+# L’état personnel (etat/) n’est que dans le zip exporté, jamais dans ce dépôt.
+etat/

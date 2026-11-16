@@ -1,0 +1,20 @@
+{
+  "name": "playground-mods",
+  "owner": {
+    "name": "herdr-virgile"
+  },
+  "metadata": {
+    "description": "blast-radius, from anthropics/claude-code-playground (claude-code/mods), referenced by subdirectory."
+  },
+  "plugins": [
+    {
+      "name": "blast-radius",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/anthropics/claude-code-playground.git",
+        "path": "claude-code/mods/blast-radius"
+      },
+      "description": "Holds risky shell commands and shows what they would change, with Proceed and Cancel."
+    }
+  ]
+}

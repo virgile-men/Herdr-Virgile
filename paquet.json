@@ -1,0 +1,48 @@
+{
+  "layout": "Herdr-Virgile",
+  "exporte_le": "2026-11-16 13:57",
+  "herdr_app": "0.1.12",
+  "mods": [
+    "tabs-vault",
+    "vault",
+    "contexte",
+    "alertes",
+    "cache",
+    "spaces-virgile",
+    "agents-virgile"
+  ],
+  "themes": [
+    "github-dark-high-contrast.json"
+  ],
+  "touches": {
+    "global": {
+      "cmd-shift-y": "mod.open:vault"
+    }
+  },
+  "etat": {
+    "shared": [
+      "agents-virgile.kanban.compact",
+      "agents-virgile.ranges.ouvert",
+      "agents-virgile.replie",
+      "agents.sort",
+      "contexte.reduit",
+      "contexte.ressources.reduit",
+      "space.colors",
+      "spaces-virgile",
+      "spaces-virgile.options",
+      "workspace.panels"
+    ],
+    "fusionner": [
+      "space.colors"
+    ],
+    "stores": {
+      "spaces-virgile": [
+        "spaces.open",
+        "machines.folded"
+      ],
+      "tabs-vault": [
+        "panels"
+      ]
+    }
+  }
+}
