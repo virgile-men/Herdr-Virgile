@@ -85,7 +85,7 @@ Left to right: a 301px sidebar, then the work column.
 - **Its own mods** (folders in `mods/`):
   - `tabs-vault`, `spaces-virgile` and `agents-virgile` are copies of the shipped `tabs`, `spaces` and `agents` 0.1.12;
   - `vault`, `contexte`, `cache` and `alertes` are new.
-  - `pane-chat`, `chat`, `chat-models` and `chat-image` are Shepherdr's (MIT), in the Trace look of the author's fork, without the rest of Shepherdr. Their `addons.js` keeps only `chat` and `needs` on. The task state icons are copied into `chat/tasks-icons/` and the artifacts icon into each mod.
+  - `pane-chat`, `chat`, `chat-models` and `chat-image` are Shepherdr's (MIT), in the Trace look of the author's fork, without the rest of Shepherdr. Their `addons.js` keeps only `chat` and `needs` on, which switches off voice, reactions, artifacts, browser and autopilot. Tasks, secrets and the coordinator have no switch; they stay out of reach because their tools (`herdr-task`, `herdr-secret`, `restart.sh`) aren't there. The task state icons are copied into `chat/tasks-icons/` and the artifacts icon into each mod.
 - **Shared state**:
   - `shared("spaces-virgile")` and `shared("agents-virgile")` hold the group trees;
   - `agents-virgile.replie`, `.kanban.compact`, `.ranges.ouvert` and `.ranges.auto` hold the Agents settings;
@@ -100,7 +100,7 @@ Left to right: a 301px sidebar, then the work column.
   - `claude -p /context --resume <id> --no-session-persistence`. If `CLAUDE_CODE_OAUTH_TOKEN` is unset, it reads `~/.config/claude/oauth-token` for that command only;
   - `ps`, `nettop`, `netstat` and `vm_stat` on macOS; `/proc`, `ss` and `/sys/fs/cgroup` on Linux;
   - `hc send`, `hc read` and `hc keys` for `/keepwarm`, `/cache-tax` and Blast Radius answers.
-  - Nothing reaches the network.
+  - Nothing reaches the network: Shepherdr's voice call (ElevenLabs) is in `chat` but switched off.
 - **Claude Code plugins it reads** (optional; only the section that needs one stays empty without it):
   - savvy-progress: sub-agent plans;
   - cache-tax: keepwarm and the guard;
