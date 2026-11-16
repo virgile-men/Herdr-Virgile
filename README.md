@@ -21,6 +21,7 @@ Il ne demande ni Shepherdr ni rien d'autre que herdr-app. Certaines sections ont
 | `claude-plugins/playground-mods/` | Le marketplace qui permet d'installer le plugin blast-radius. |
 | `installer.py` | Installe ou met à jour tout ce qui précède dans une instance de herdr-app, état compris (voir plus bas). |
 | `etat/` | **Dans le zip seulement, pas dans le dépôt GitHub.** L'état de l'instance d'origine : étiquettes, groupes, icônes et couleurs des Spaces, groupes et réglages d'Agents (tri, liste repliée, kanban compact, Rangés ouverts, rangement automatique), réglages de Session (sections réduites), et ce que Spaces et l'en-tête des onglets gardent pour chaque space (déplié, panneau ouvert). |
+| `RECIPE.md` | La fiche du layout pour la galerie herdr.dev/layouts (en anglais) : ce qu'on voit, comment il se comporte, de quoi il est fait, les pièges et les vérifications. Un agent peut le reconstruire à partir d'elle. |
 | `paquet.json` | Ce que contient le paquet, sa date et la version de herdr-app qui l'a produit. |
 
 ## Installer

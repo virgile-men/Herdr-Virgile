@@ -1,0 +1,130 @@
+# Herdr-Virgile
+
+A herdr-app layout built from `main` 0.1.12, with a French UI. The left sidebar keeps Spaces and Agents. Spaces gains nested groups, per-space icons and colors, and per-terminal labels. Agents is pinned to the bottom of the sidebar, with groups, a kanban view and a "Rangés" (settled) section. The tab bar gets four buttons, **Files · Vault · Session · Alertes**, each opening its panel on the right. The panels follow the Claude Code session of the active terminal: environment, CPU, memory and network use, context window, prompt cache, background jobs, sub-agents, held commands and notifications.
+
+## What you see
+
+Left to right: a 301px sidebar, then the work column.
+
+- **Sidebar** (`chrome` background, fixed width 301px, min 44, max 480; not resizable):
+  - **Brand**, 46px, shipped `workspace-chrome`, draggable window area.
+  - **Spaces** (`spaces-virgile`), fills the height (min 90px).
+    - One flat list of spaces; the ☰ menu next to + can bring back one header per machine (off by default).
+    - Under each space are its terminals: the first tab, or all of them once expanded. Each shows its machine as a pill, e.g. "lxc-perso · t6 · /root", or the laptop icon alone for this computer. Each can carry free labels (a name and a color), set by right-clicking the terminal.
+    - Groups of spaces nest up to 8 levels deep. Each group has a name, a Lucide icon and a color, and sub-groups inherit the root group's color.
+    - Every space can have its own icon and color.
+    - The + button asks which machine to open the new space on; each group has its own +.
+  - **Agents** (`agents-virgile`) sits at the bottom of the sidebar, starting at 200px with a minimum of 42px.
+    - Its height is computed from its rows: header 41, agent row 30, sub-agent 26, section 30, group 26, bottom padding 8. It is capped at half the height of Spaces plus Agents.
+    - Groups of agents sit on top. The other agents follow the shipped sort, priority or grouped by space, with pinned agents first.
+    - Below the scrolling list sits a **Rangés** footer, folded by default. When open it shows at most 5 rows, newest first, each with the time since it was settled.
+    - Clicking the "Agents" title folds the whole list to a 42px header that shows the total and the counts of agents waiting, working and done.
+  - **Footer**, 69px, shipped `workspace-chrome` with `footer: true`.
+- **Work column**:
+  - **Tab bar** (`tabs-vault`), 42px, draggable. It shows the tabs as pills. At the right sit the panel buttons Files, Vault, Session (icon `contexte.svg`) and Alertes. The Alertes label becomes "Alertes · N" when commands are held or rules are pending, and "Alertes •" when notifications are unseen. Buttons are 26px high, 12px text, `selected` background when on.
+  - **Body**: a row with padding 8 and gap 8.
+    - **Main**: the active tab's panes. Each pane has the shipped `pane` header (30px, always shown), a 10px radius, a 1px `border` (`accent` when focused), an 8px gap between panes, and `lone` set.
+    - **Panel**: 324px (min 280, max 900), a stack of `files`, `vault`, `contexte` and `alertes`.
+  - **Status bar**, 28px, shipped `workspace-status`.
+- **Root**:
+  - `canvas` background, 1px `border` dividers, terminal padding [14, 12];
+  - `titlebar: "none"` with the traffic lights at [12, 16];
+  - theme `paper` in light mode and `github-dark-high-contrast` in dark mode (included: background `#0a0c10`, foreground `#f0f3f6`, cursor `#71b7ff`).
+
+## How it behaves
+
+- **Agent statuses**, everywhere in Agents:
+  - **working**: a 12px spinner in the theme's `working` color, turning every 900 ms;
+  - **blocked**: a "Needs you" pill, with text in the `blocked` color on that color at 15% opacity; in compact places, a 14px "!" square;
+  - **done**: a 7px filled dot in the `done` color;
+  - **idle**: a 7px ring with a 1.5px border.
+
+  A done agent turns idle once its turn was seen (`herdr.seen` label ≥ `turn`). A folded group shows the most urgent status of its members.
+- **Agents list**:
+  - Click an agent: `pane.focus`, or `terminal.peek` for an agent without a pane.
+  - Right-click: Open, Peek, Pin, "Ranger son onglet" / "Sortir des rangés", Move to group, New group, Remove from group, and Kanban view.
+  - Drag agents onto groups, into another order, or onto the Rangés header.
+  - Agents shown inside a Trace chat pane (a terminal labelled `herdr.chat=<pane>`, which the shipped `agents()` omits) are listed too.
+  - An agent is forgotten 15 s after its terminal is gone, but only if its machine is reachable and lists at least one terminal.
+- **Rangés**:
+  - "Ranger son onglet" runs `tab.settle` on the agent's tab, which settles the whole tab, on this screen only.
+  - Showing the tab, an agent of it needing the user, `tab.unsettle`, or dragging its agent elsewhere brings it back.
+  - Optional, from ☰ › "Ranger automatiquement…": after 1, 3, 7 or 14 days with every agent and sub-agent idle, a tab is settled on its own. This never applies to the shown tab, a pinned or focused agent, or an unseen done agent. The default is never.
+- **Kanban** (☰ › Vue kanban): a 1400×860 dialog with the columns Vous attend, En cours, Terminé and Au repos, and filters by root group.
+  - A strip on top shows each machine's CPU, RAM and network, with a red edge above 80% CPU or 90% RAM.
+  - A card shows machine › space › tab, folder, branch and durations. For Claude Code it adds the title, model, effort, mode, context %, estimated cost, requests and compactions, last prompt and last reply, savvy-progress step, sub-agents, and the agent's own CPU, RAM and network.
+  - "Détaillé / Compact" (or the C key) reduces each card to three lines, with the rest in its tooltip.
+  - Session data refreshes every 20 s and resources every 5 s, only while the kanban is open.
+- **Tab bar**:
+  - Each Panel button toggles its panel, using `layout.select` on `panel-body` and `layout.show` / `layout.hide` on `panel`.
+  - The open panel is remembered per space.
+  - A tab that runs a Claude Code session is named after that session's title. A name given by hand is never changed.
+  - The scroll wheel switches tabs.
+  - When Blast Radius holds a command, the Alertes panel opens by itself.
+- **Session** (`contexte`) shows, for the active terminal's Claude Code session:
+  - environment;
+  - Resources: the agent's process tree and its whole machine, every 3 s, folded to two lines by default (click the title);
+  - the context window, from `claude -p /context`;
+  - a cache summary, whose "Détails" button opens **Cache** as a 560px dialog: cache state, keepwarm buttons and the cold-send guard;
+  - background jobs;
+  - sub-agents with model, tokens, cost and savvy-progress plan.
+- **Alertes**:
+  - Blast Radius: commands held by the plugin, answered by pressing 1 or 2 in the agent's terminal;
+  - Règles: reflect-mod rules to accept, written to CLAUDE.md after checking the file did not change;
+  - Notifications: agents waiting or done.
+- **Vault** (also `cmd-shift-y`): environment variables per machine, stored in `~/.config/herdr-vault/env` (mode 0600) and loaded only in Herdr terminals.
+
+## Built from
+
+- **Layout**: `layouts/Herdr-Virgile.json`, cloned from `main` 0.1.12. The node tree is `root` (row) → `sidebar` (column: `brand`, `sidebar-lists` [`spaces`, `agents`], `sidebar-footer`) and `work` (column: `tabs`, `work-body` [`main`, `panel` → `panel-body` stack], `status`).
+- **Shipped mods it uses**: `workspace-chrome`, `pane`, `files`, `workspace-status`.
+- **Its own mods** (folders in `mods/`):
+  - `tabs-vault`, `spaces-virgile` and `agents-virgile` are copies of the shipped `tabs`, `spaces` and `agents` 0.1.12;
+  - `vault`, `contexte`, `cache` and `alertes` are new.
+- **Shared state**:
+  - `shared("spaces-virgile")` and `shared("agents-virgile")` hold the group trees;
+  - `agents-virgile.replie`, `.kanban.compact`, `.ranges.ouvert` and `.ranges.auto` hold the Agents settings;
+  - `spaces-virgile.height` is published so that Agents can cap its height;
+  - `space.colors`, `agents.sort` and `workspace.panels` are shared with the shipped mods.
+- **herdr functions used**:
+  - state: `agents()`, `terminals()`, `panes()`, `spaces()`, `focused()`, `shared` / `setShared`, `layout()`, `settings()`, `theme()`;
+  - views and agent order: `openOverlay`, `setAgentOrder`;
+  - commands: `nextCommand()`, and `run()` with `layout.resize`, `layout.select`, `layout.show`, `layout.hide`, `pane.focus`, `terminal.peek`, `terminal.pin`, `tab.settle`, `tab.unsettle`, `tab.rename`, `space.new`, `space.move`, `space.rename`, `agent.focus`, `mod.open`.
+- **Programs it runs** on the agent's machine, through `exec` and `hc exec`:
+  - `sh` and `awk`, which read `~/.claude/sessions/`, `~/.claude/projects/*/*.jsonl`, `~/.claude/settings.json` and `~/.claude/plugins/store/`;
+  - `claude -p /context --resume <id> --no-session-persistence`. If `CLAUDE_CODE_OAUTH_TOKEN` is unset, it reads `~/.config/claude/oauth-token` for that command only;
+  - `ps`, `nettop`, `netstat` and `vm_stat` on macOS; `/proc`, `ss` and `/sys/fs/cgroup` on Linux;
+  - `hc send`, `hc read` and `hc keys` for `/keepwarm`, `/cache-tax` and Blast Radius answers.
+  - Nothing reaches the network.
+- **Claude Code plugins it reads** (optional; only the section that needs one stays empty without it):
+  - savvy-progress: sub-agent plans;
+  - cache-tax: keepwarm and the guard;
+  - reflect-mod: Règles;
+  - blast-radius: held commands. Its marketplace is in `claude-plugins/playground-mods`.
+- **Art**:
+  - Lucide 0.460 icons (ISC, `icons/LICENSE-lucide`).
+  - `mods/contexte/core/` is Shepherdr's log reader (MIT, `core/LICENSE-shepherdr`).
+
+## Watch out
+
+- **`herdr-app check` writes to the real home.** It runs the mod and saves its `setShared` writes into the `shared.json` of `HERDR_APP_HOME`. Run with no spaces, Spaces empties `space.colors`. Check copies with `HERDR_APP_HOME` set to an empty folder whose path is short, since the socket path must fit `SUN_LEN`.
+- **A second herdr-app home shares the same herdr-core.** It shows the same spaces and machines, so it is not a clean demo window.
+- **Agents sets its own height.** It runs `layout.resize {id: "agents", px}` from a 250 ms timer, never from `render`. The block's `min` must be 42, or the folded list cannot shrink. `sidebar-lists` is `resizable: false`.
+- **`${…}` is interpolated inside `String.raw`.** Shell scripts in template strings cannot use `${var%%…}`.
+- **`line_height(16)` is read in rem.** Write `"16px"`.
+- **`writeTextFile` will not overwrite** unless it is given the expected old content as its third argument.
+- **A throw inside the `nextCommand` loop kills it.** Keep the loop in try/catch.
+- **The copied shipped mods track 0.1.12.** On a newer herdr-app they don't follow upstream changes.
+- **Settling is per screen.** It is kept in `view.json` and is not shared between windows.
+- **Price tables are copied** into `claude.js` and `agents-virgile/session.js`. Update both when prices change.
+- **Tested on macOS only.** The Linux branches of the resource scripts were exercised on remote Proxmox and LXC machines, not as the local machine.
+
+## Done when
+
+- `HERDR_APP_HOME=<empty dir> herdr-app check mods/<mod>` passes for `tabs-vault`, `vault`, `contexte`, `alertes`, `cache`, `spaces-virgile` and `agents-virgile`.
+- `herdr-app do layout.switch '{"name":"Herdr-Virgile"}'` shows the layout: Spaces on top, Agents at the bottom, and the four panel buttons in the tab bar.
+- Clicking "Agents" folds the list to 42px with the per-status counts, and clicking again restores it.
+- `herdr-app do tab.settle --id <tab>` moves that tab's agents into Rangés, and `tab.unsettle` brings them back to their group.
+- `herdr-app do agents-virgile.kanban` opens the kanban with one card per agent. Pressing C toggles compact cards.
+- With a Claude Code session in the active tab, Session shows its model, its context window and its resources, and the tab takes the session's title.
+- `python3 installer.py --essai` lists the files it would copy and the `cmd-shift-y` key it would add, and writes nothing.
