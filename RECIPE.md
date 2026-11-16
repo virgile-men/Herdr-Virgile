@@ -1,6 +1,6 @@
 # Herdr-Virgile
 
-A herdr-app layout built from `main` 0.1.12, with a French UI. The left sidebar keeps Spaces and Agents. Spaces gains nested groups, per-space icons and colors, and per-terminal labels. Agents is pinned to the bottom of the sidebar, with groups, a kanban view and a "Rangés" (settled) section. The tab bar gets four buttons, **Files · Vault · Session · Alertes**, each opening its panel on the right. The panels follow the Claude Code session of the active terminal: environment, CPU, memory and network use, context window, prompt cache, background jobs, sub-agents, held commands and notifications.
+A herdr-app layout built from `main` 0.1.12, with a French UI. The left sidebar keeps Spaces and Agents. Spaces gains nested groups, per-space icons and colors, and per-terminal labels. Agents is pinned to the bottom of the sidebar, with groups, a kanban view and a "Rangés" (settled) section. The tab bar gets four buttons, **Files · Vault · Session · Alertes**, each opening its panel on the right. Agent panes get a **Trace | Terminal** switch that swaps the terminal for a chat-style view of the agent's session. The panels follow the Claude Code session of the active terminal: environment, CPU, memory and network use, context window, prompt cache, background jobs, sub-agents, held commands and notifications.
 
 ## What you see
 
@@ -23,7 +23,7 @@ Left to right: a 301px sidebar, then the work column.
 - **Work column**:
   - **Tab bar** (`tabs-vault`), 42px, draggable. It shows the tabs as pills. At the right sit the panel buttons Files, Vault, Session (icon `contexte.svg`) and Alertes. The Alertes label becomes "Alertes · N" when commands are held or rules are pending, and "Alertes •" when notifications are unseen. Buttons are 26px high, 12px text, `selected` background when on.
   - **Body**: a row with padding 8 and gap 8.
-    - **Main**: the active tab's panes. Each pane has the shipped `pane` header (30px, always shown), a 10px radius, a 1px `border` (`accent` when focused), an 8px gap between panes, and `lone` set.
+    - **Main**: the active tab's panes, with a 10px radius, a 1px `border` (`accent` when focused), an 8px gap between panes, and `lone` set. Each pane has the `pane-chat` header (30px, always shown): program icon, agent name or terminal title, folder, status, split, zoom and close buttons. On a Claude Code or Codex pane it adds a segmented **Trace | Terminal** switch.
     - **Panel**: 324px (min 280, max 900), a stack of `files`, `vault`, `contexte` and `alertes`.
   - **Status bar**, 28px, shipped `workspace-status`.
 - **Root**:
@@ -72,15 +72,20 @@ Left to right: a 301px sidebar, then the work column.
   - Blast Radius: commands held by the plugin, answered by pressing 1 or 2 in the agent's terminal;
   - Règles: reflect-mod rules to accept, written to CLAUDE.md after checking the file did not change;
   - Notifications: agents waiting or done.
+- **Trace | Terminal**:
+  - Trace splits a `chat` pane beside the agent's pane, then parks the agent's terminal (`terminal.park`: it keeps running without a pane) and labels it `herdr.chat=<chat pane>`, so the chat takes the exact slot. Terminal does the reverse. Each step runs through `herdr-app do`.
+  - The Trace view reads the agent's own session log (Claude Code `~/.claude/projects/…/<session>.jsonl`, or Codex's rollout file). It shows replies as plain full-width text, tool calls grouped as rows with icons, background jobs, and a message box with the model and effort line. Messages are sent with `hc send`. It uses the system font (`.AppleSystemUIFont` on macOS).
+  - `chat-models` is the model and effort popup. `chat-image` views pictures and attached files.
 - **Vault** (also `cmd-shift-y`): environment variables per machine, stored in `~/.config/herdr-vault/env` (mode 0600) and loaded only in Herdr terminals.
 
 ## Built from
 
 - **Layout**: `layouts/Herdr-Virgile.json`, cloned from `main` 0.1.12. The node tree is `root` (row) → `sidebar` (column: `brand`, `sidebar-lists` [`spaces`, `agents`], `sidebar-footer`) and `work` (column: `tabs`, `work-body` [`main`, `panel` → `panel-body` stack], `status`).
-- **Shipped mods it uses**: `workspace-chrome`, `pane`, `files`, `workspace-status`.
+- **Shipped mods it uses**: `workspace-chrome`, `files`, `workspace-status`.
 - **Its own mods** (folders in `mods/`):
   - `tabs-vault`, `spaces-virgile` and `agents-virgile` are copies of the shipped `tabs`, `spaces` and `agents` 0.1.12;
   - `vault`, `contexte`, `cache` and `alertes` are new.
+  - `pane-chat`, `chat`, `chat-models` and `chat-image` are Shepherdr's (MIT), in the Trace look of the author's fork, without the rest of Shepherdr. Their `addons.js` keeps only `chat` and `needs` on. The task state icons are copied into `chat/tasks-icons/` and the artifacts icon into each mod.
 - **Shared state**:
   - `shared("spaces-virgile")` and `shared("agents-virgile")` hold the group trees;
   - `agents-virgile.replie`, `.kanban.compact`, `.ranges.ouvert` and `.ranges.auto` hold the Agents settings;
@@ -117,6 +122,9 @@ Left to right: a 301px sidebar, then the work column.
 - **The copied shipped mods track 0.1.12.** On a newer herdr-app they don't follow upstream changes.
 - **Settling is per screen.** It is kept in `view.json` and is not shared between windows.
 - **Price tables are copied** into `claude.js` and `agents-virgile/session.js`. Update both when prices change.
+- **Trace needs `sh` on the agent's machine.** On Windows, an agent started in PowerShell or cmd gets an empty Trace. Agents in WSL (as a machine) or on Linux and macOS work.
+- **Without Shepherdr's hook**, permission prompts are answered in the terminal. Restarting an agent with another model needs Shepherdr's coordinator, so it fails here with a message.
+- **The installer leaves Trace alone where Shepherdr is installed** (`lib/addons.json`): Shepherdr's copies are complete, while these are trimmed.
 - **Tested on macOS only.** The Linux branches of the resource scripts were exercised on remote Proxmox and LXC machines, not as the local machine.
 
 ## Done when
@@ -127,4 +135,5 @@ Left to right: a 301px sidebar, then the work column.
 - `herdr-app do tab.settle --id <tab>` moves that tab's agents into Rangés, and `tab.unsettle` brings them back to their group.
 - `herdr-app do agents-virgile.kanban` opens the kanban with one card per agent. Pressing C toggles compact cards.
 - With a Claude Code session in the active tab, Session shows its model, its context window and its resources, and the tab takes the session's title.
+- On a Claude Code pane, clicking Trace swaps the terminal for the conversation in the same slot, and Terminal brings the terminal back.
 - `python3 installer.py --essai` lists the files it would copy and the `cmd-shift-y` key it would add, and writes nothing.

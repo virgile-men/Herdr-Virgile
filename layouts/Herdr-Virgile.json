@@ -99,7 +99,7 @@
                 "pane": {
                   "header": {
                     "content": {
-                      "mod": "pane"
+                      "mod": "pane-chat"
                     },
                     "reveal": "always",
                     "height": 30,

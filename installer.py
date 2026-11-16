@@ -12,6 +12,8 @@ Ce qu'il fait, dans l'ordre :
 1. Copie layouts/, mods/ et themes/ dans la maison de herdr-app. Un fichier ou un mod déjà là et
    différent est d'abord sauvegardé dans ~/herdr-virgile-sauvegardes/<date>/, puis remplacé. Les
    fichiers que herdr-app écrit lui-même dans un mod (*.d.ts, jsconfig.json, fichiers cachés) restent.
+   Trace (pane-chat, chat, chat-models, chat-image) n'est pas copié là où Shepherdr est installé :
+   le sien, complet, reste en place.
 2. Ajoute à keys.json le raccourci du Vault (cmd-shift-y), sauf si la touche sert déjà.
 3. Écrit l'état (etat/) : les clés de shared.json (groupes, étiquettes, icônes et couleurs des
    Spaces, groupes et réglages d'Agents, réglages de Session) et ce que Spaces et l'en-tête des
@@ -45,6 +47,9 @@ class Install:
         self.env = {**os.environ, "HERDR_APP_HOME": self.home}
         self.sauves = 0
         self.ferme_par_nous = False
+        # Shepherdr installé ici (lib/addons.json) : son Trace complet est en place, la copie réduite du
+        # paquet ne le remplace pas.
+        self.shepherdr = os.path.isfile(os.path.join(self.home, "lib", "addons.json"))
 
     # ---- outils ----------------------------------------------------------------------------
     def herdr(self, *args, timeout=60, env=None):
@@ -143,6 +148,9 @@ class Install:
         for t in p["themes"]:
             dire(f"   themes/{t} : {self.fichier(os.path.join('themes', t))}")
         for m in p["mods"]:
+            if m in p.get("trace", []) and self.shepherdr and os.path.isdir(os.path.join(self.home, "mods", m)):
+                dire(f"   mods/{m} : gardé (Shepherdr est installé ici : son Trace reste en place)")
+                continue
             etat, n, retires = self.mod(m)
             detail = "" if etat == "inchangé" else f" ({n} fichier{'s' if n > 1 else ''}" + (f", {retires} retiré{'s' if retires > 1 else ''}" if retires else "") + ")"
             dire(f"   mods/{m} : {etat}{detail}")
