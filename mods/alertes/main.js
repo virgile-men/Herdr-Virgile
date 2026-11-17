@@ -6,7 +6,7 @@
 // puisque Herdr n'en garde pas. Un clic sur une notification va à l'agent.
 //
 // La veille de l'en-tête ouvre ce panneau quand l'agent suivi a une commande retenue, et son bouton
-// compte ce qui attend une décision (« Alertes · 2 »), ou montre « Alertes • » s'il y a du nouveau.
+// compte ce qui attend une décision (« Alerts · 2 »), ou montre « Alerts • » s'il y a du nouveau.
 // Ne lit rien tant que le panneau est caché.
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, Scrollbar } from "gpui-base";
@@ -14,18 +14,24 @@ import { theme, run, shared, setShared } from "herdr";
 import { affiche } from "./claude.js";
 import { SectionBlast, JAUNE } from "./blast.js";
 import { SectionRegles } from "./regles.js";
-import { journal, JOURNAL, VU } from "./notifs.js";
+import { journal, titreNotif, JOURNAL, VU } from "./notifs.js";
+// Dates written by hand: the mod runtime ignores toLocale*'s locale and options ("11/16/2026, 02:56:15 AM").
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const p2 = (n) => String(n).padStart(2, "0");
+const hhmm = (d) => `${p2(d.getHours())}:${p2(d.getMinutes())}`;
+const dayMonth = (d) => `${d.getDate()} ${MONTHS[d.getMonth()]}`;
 
 const ID = "alertes";
 const MONTRES = 40;
 
-// « à l'instant », « il y a 5 min », « il y a 2 h », puis la date.
+// « just now », « 5 min ago », « 2h ago », puis la date (« 17 Nov, 14:05 »).
 const ilYa = (ms, at) => {
   const min = Math.floor(ms / 60000);
-  if (min < 1) return "à l'instant";
-  if (min < 60) return `il y a ${min} min`;
-  if (min < 24 * 60) return `il y a ${Math.floor(min / 60)} h`;
-  return new Date(at).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  if (min < 1) return "just now";
+  if (min < 60) return `${min} min ago`;
+  if (min < 24 * 60) return `${Math.floor(min / 60)}h ago`;
+  const d = new Date(at);
+  return `${dayMonth(d)}, ${hhmm(d)}`;
 };
 
 export default class Alertes extends View {
@@ -72,14 +78,14 @@ export default class Alertes extends View {
       .when(Boolean(droite), (e) => e.child(droite));
 
     const ligneNotif = (n) => {
-      const neuve = n.at > this.vuAvant;
+      const neuve = n.at > this.vuAvant, titreN = titreNotif(n);
       return h_flex().id(`n-${n.id}`).flex_none().mx(6).px(8).py(5).gap(8).items_start().rounded(7)
-        .tooltip(n.corps ? `${n.titre}\n${n.corps}` : n.titre)
+        .tooltip(n.corps ? `${titreN}\n${n.corps}` : titreN)
         .when(Boolean(n.addr), (e) => e.cursor_pointer().hover((s) => s.bg(t.hover))
           .on_click(() => run("agent.focus", { terminal: n.addr })))
         .child(div().size(8).mt(5).flex_none().rounded(4).bg(COULEUR[n.type] ?? t.accent))
         .child(v_flex().flex_1().min_w(0).gap(1)
-          .child(div().truncate().text_size(12.5).text_color(t.foreground).when(neuve, (e) => e.font_semibold()).child(n.titre))
+          .child(div().truncate().text_size(12.5).text_color(t.foreground).when(neuve, (e) => e.font_semibold()).child(titreN))
           .when(Boolean(n.corps), (e) => e.child(div().truncate().text_size(11.5).text_color(t.muted).child(n.corps))))
         .child(div().flex_none().pt(1).text_size(11).text_color(t.dim).child(ilYa(maintenant - n.at, n.at)));
     };
@@ -89,20 +95,20 @@ export default class Alertes extends View {
       .child(div().flex_1().min_h(0).relative()
         .child(v_flex().id("alertes-liste").absolute().inset_0().overflow_y_scroll().pb(10)
           // Blast Radius
-          .child(titre("Blast Radius", nBlast ? pastille(`${nBlast} retenue${nBlast > 1 ? "s" : ""}`, JAUNE) : null))
+          .child(titre("Blast Radius", nBlast ? pastille(`${nBlast} held`, JAUNE) : null))
           .children(this.blast.elements(t, cx))
           .child(sep())
           // Règles
-          .child(titre("Règles", nRegles ? pastille(`${nRegles} en attente`, t.accent) : null,
-            this.regles.store ? lien("pause", pause ? "En pause · reprendre" : "Mettre en pause", (cx) => this.regles.pause(cx), pause ? t.ansi3 : null) : null))
+          .child(titre("Rules", nRegles ? pastille(`${nRegles} pending`, t.accent) : null,
+            this.regles.store ? lien("pause", pause ? "Paused · resume" : "Pause", (cx) => this.regles.pause(cx), pause ? t.ansi3 : null) : null))
           .children(this.regles.elements(t, cx))
           .child(sep())
           // Notifications
           .child(titre("Notifications", null,
-            notifs.length ? lien("effacer", "Tout effacer", (cx) => { setShared(JOURNAL, []); cx.notify(); }) : null))
+            notifs.length ? lien("effacer", "Clear all", (cx) => { setShared(JOURNAL, []); cx.notify(); }) : null))
           .children(notifs.map(ligneNotif))
           .when(!notifs.length, (e) => e.child(div().mx(14).text_size(12).text_color(t.dim)
-            .child("Aucune notification. Ici : un agent qui attend votre réponse, un agent qui a fini pendant que vous ne regardiez pas, une commande retenue, une règle proposée."))))
+            .child("No notifications. They appear here when an agent needs your answer, an agent finishes while you're not looking, a command is held or a rule is suggested."))))
         .child(Scrollbar.vertical("alertes-liste").absolute().inset_0()));
   }
 }

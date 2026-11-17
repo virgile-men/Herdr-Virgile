@@ -144,7 +144,7 @@ export default class Spaces extends View {
           const loose = this.loose ?? [];
           save(c === "group-top" || !loose.length ? A.placeAfter(data(), g, []) : A.placeRootGroup(data(), g, loose, { after: loose[loose.length - 1] }));
         }
-        // Le dialogue « Grouper ces deux spaces » sur les deux premiers spaces hors groupe de machines différentes (pour essayer).
+        // Le dialogue « Group these two spaces » sur les deux premiers spaces hors groupe de machines différentes (pour essayer).
         else if (c === "pair") {
           const d = data(), free = sp.filter((x) => !A.groupOfSpace(d, x.id));
           const a = free[0], b = free.find((x) => (x.machine ?? null) !== (a?.machine ?? null));
@@ -180,7 +180,7 @@ export default class Spaces extends View {
     if (sp.some((s) => !this.shown.has(s.id)) || this.orderingDue(now)) cx.notify();
   }
 
-  // « Nouveau space ici » : le space qui vient d'apparaître sur cette machine va dans le groupe.
+  // « New space here » : le space qui vient d'apparaître sur cette machine va dans le groupe.
   adopt(sp, now) {
     const p = shared(PENDING);
     if (!p) return;
@@ -588,7 +588,7 @@ export default class Spaces extends View {
         this.open.add(toId);
         localStorage.setItem("spaces.open", JSON.stringify([...this.open]));
       }
-      if (r.error) notify({ title: "Déplacer l'onglet", body: r.error, level: r.id ? "warning" : "error" });
+      if (r.error) notify({ title: "Move tab", body: r.error, level: r.id ? "warning" : "error" });
       cx.notify();
     });
   }
@@ -637,7 +637,7 @@ export default class Spaces extends View {
       .child(div().flex_1().min_w(0).truncate().child(g.name))
       .when(g.folded && (worst === "blocked" || worst === "done"), (el) => el.child(div().size(6).rounded(3).flex_none().bg(tone(t, worst))))
       .child(div().id(`group-add-${gid}`).flex_none().px(4).rounded(4).hover((s) => s.bg(t.hover).text_color(t.foreground))
-        .tooltip("Nouveau space dans ce groupe")
+        .tooltip("New space in this group")
         .on_mouse_down("left", (e, cx) => { cx.stop_propagation(); this.addAt = rectOf(e); })
         .on_click(() => {
           const r = this.addAt;
@@ -660,7 +660,7 @@ export default class Spaces extends View {
     if (!rows.length) {
       const empty = { kind: "g", id: gid, ctx: { empty: true } };
       rows.push(this.draggable(h_flex().id(`group-empty-${gid}`).h(26).flex_none().px(8).items_center().rounded(7).text_size(11.5).text_color(t.dim)
-        .child("Vide : glissez-y des spaces"), empty, false));
+        .child("Empty: drag spaces here"), empty, false));
     }
     return v_flex().flex_none().child(header)
       .child(v_flex().flex_none().relative().pl(12)
@@ -721,11 +721,11 @@ export default class Spaces extends View {
     if (!tail) return out;
     const loading = machines().filter((m) => m.name && m.layout === "loading").map((m) => m.name);
     if (loading.length) out.push(div().id("machines-loading").h(26).flex_none().px(8).flex().items_center().text_size(11.5).text_color(t.dim)
-      .child(`Chargement : ${loading.join(", ")}…`));
+      .child(`Loading: ${loading.join(", ")}…`));
     if (!out.length && !hasGroups) out.push(h_flex().id("space-none").h(28).flex_none().px(8).gap(7).items_center().rounded(7)
       .text_size(12).text_color(t.dim).hover((s) => s.bg(t.hover).text_color(t.foreground))
       .on_click(() => run("space.new", { machine: "" }))
-      .child(svg(chrome("plus")).size(12)).child("Nouveau space"));
+      .child(svg(chrome("plus")).size(12)).child("New space"));
     return out;
   }
 
@@ -790,7 +790,7 @@ export default class Spaces extends View {
     const branch = raw === "main" || raw === "master" ? "" : raw;
     if (!branch && !(g.ahead > 0) && !(g.behind > 0)) return [];
     return [h_flex().id(id).flex_shrink(1).min_w(0).gap(4).items_center().text_size(11).text_color(t.dim)
-      .tooltip([g.name && `Dépôt ${g.name}`, `Branche ${raw}`, g.ahead > 0 && `${g.ahead} commit(s) en avance`, g.behind > 0 && `${g.behind} en retard`].filter(Boolean).join(" · "))
+      .tooltip([g.name && `Repo ${g.name}`, `Branch ${raw}`, g.ahead > 0 && `${g.ahead} commit${g.ahead > 1 ? "s" : ""} ahead`, g.behind > 0 && `${g.behind} behind`].filter(Boolean).join(" · "))
       .when(Boolean(branch), (el) => el.child(svg(chrome("git-branch")).size(10).flex_none()).child(div().min_w(0).truncate().child(branch)))
       .when(g.ahead > 0, (el) => el.child(div().flex_none().text_color(t.ansi2).child(`↑${g.ahead}`)))
       .when(g.behind > 0, (el) => el.child(div().flex_none().text_color(t.ansi1).child(`↓${g.behind}`)))];
@@ -916,7 +916,7 @@ export default class Spaces extends View {
           .child(div().flex_1())
           .when(tabs.length > 1, (el) => el.child(h_flex().id(`space-open-${w.id}`).flex_none().h(18).px(3).gap(3).items_center().rounded(4)
             .text_size(11).text_color(t.dim).hover((s) => s.bg(t.hover).text_color(t.foreground))
-            .tooltip(open ? "Replier les onglets" : `Montrer les ${tabs.length} onglets`)
+            .tooltip(open ? "Collapse tabs" : `Show all ${tabs.length} tabs`)
             .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); this.toggleOpen(w.id); cx.notify(); })
             .when(!open, (b) => b.child(String(tabs.length)))
             .child(svg(chrome(open ? "chevron-down" : "chevron-right")).size(11)))),
@@ -969,7 +969,7 @@ export default class Spaces extends View {
         // Le menu ☰ : trier par machine, nouveau groupe, étiquettes, tout replier (le même qu'au clic droit).
         .when(!collapsed, (el) => el.child(div().id("spaces-menu").size(26).flex_none().flex().items_center().justify_center().rounded(6)
           .hover(s => s.bg(t.hover).text_color(t.foreground))
-          .tooltip("Options de la liste")
+          .tooltip("List options")
           .on_mouse_down("left", (e) => { this.menuAt = rectOf(e); })
           .on_click(() => {
             const r = this.menuAt;
@@ -977,7 +977,7 @@ export default class Spaces extends View {
           })
           .child(svg(icon("menu")).size(14))))
         .child(div().id("space-new").size(26).flex_none().flex().items_center().justify_center().rounded(6).hover(s => s.bg(t.hover).text_color(t.foreground))
-          .tooltip("Nouveau space : choisir la machine")
+          .tooltip("New space: choose a machine")
           .on_mouse_down("left", (e) => { this.plusAt = rectOf(e); })
           .on_click(() => {
             const r = this.plusAt;

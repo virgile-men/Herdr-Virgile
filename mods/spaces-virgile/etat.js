@@ -8,7 +8,7 @@ import { KEY, normalize } from "./arbre.js";
 export const data = () => normalize(shared(KEY));
 export const save = (d) => setShared(KEY, d);
 
-// Un space demandé depuis un groupe (« Nouveau space ici ») : { group, machine, before: [ids], at }.
+// Un space demandé depuis un groupe (« New space here ») : { group, machine, before: [ids], at }.
 // La barre le range dans le groupe dès qu'il apparaît (main.js, checkNew).
 export const PENDING = "spaces-virgile.pending";
 
@@ -55,7 +55,7 @@ export function avatarColor(t, w, d) {
 }
 
 // L'avatar d'un space : une tuile de sa couleur, avec son icône (looks) ou son initiale.
-// `look` : un aperçu (le dialogue Icône du space), sinon celui qui est rangé.
+// `look` : un aperçu (le dialogue Space icon), sinon celui qui est rangé.
 export function avatar(t, w, d, size = 18, look = null) {
   const l = look ?? d.looks[w.id] ?? {};
   const fill = look?.color ?? avatarColor(t, w, d);

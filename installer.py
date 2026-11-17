@@ -1,28 +1,29 @@
 #!/usr/bin/env python3
-"""Installe (ou met à jour) le paquet Herdr-Virgile dans une instance de herdr-app, sur macOS ou Linux.
+"""Installs (or updates) the Herdr-Virgile package into a herdr-app instance, on macOS or Linux.
 
-    python3 installer.py            installe ou met à jour, état compris
-    python3 installer.py --essai    montre ce qui serait fait, sans rien écrire
-    python3 installer.py --sans-etat         layout, mods, thème et raccourci seulement
-    python3 installer.py --etat-seulement    l'état seulement (par exemple après un Ctrl-C)
-    python3 installer.py --home DIR          une autre maison que ~/.config/herdr-app
-    python3 installer.py --pas-de-relance    ne rouvre pas herdr-app après avoir écrit l'état
+    python3 installer.py                 install or update, state included
+    python3 installer.py --dry-run       show what would be done, write nothing
+    python3 installer.py --no-state      layout, mods, theme and shortcut only
+    python3 installer.py --state-only    the state only (for example after a Ctrl-C)
+    python3 installer.py --home DIR      another home than ~/.config/herdr-app
+    python3 installer.py --no-relaunch   don't reopen herdr-app after writing the state
+(The French option names --essai, --sans-etat, --etat-seulement and --pas-de-relance still work.)
 
-Ce qu'il fait, dans l'ordre :
-1. Copie layouts/, mods/ et themes/ dans la maison de herdr-app. Un fichier ou un mod déjà là et
-   différent est d'abord sauvegardé dans ~/herdr-virgile-sauvegardes/<date>/, puis remplacé. Les
-   fichiers que herdr-app écrit lui-même dans un mod (*.d.ts, jsconfig.json, fichiers cachés) restent.
-   Trace (pane-chat, chat, chat-models, chat-image) n'est pas copié là où Shepherdr est installé :
-   le sien, complet, reste en place.
-2. Ajoute à keys.json le raccourci du Vault (cmd-shift-y), sauf si la touche sert déjà.
-3. Écrit l'état (etat/) : les clés de shared.json (groupes, étiquettes, icônes et couleurs des
-   Spaces, groupes et réglages d'Agents, réglages de Session) et ce que Spaces et l'en-tête des
-   onglets gardent pour chaque space (déplié, panneau ouvert). herdr-app récrit ces fichiers tant
-   qu'il tourne : le script attend qu'il soit fermé (⌘Q ; les terminaux continuent de tourner), écrit,
-   puis le rouvre sur macOS. Sans dossier etat/ (le dépôt public), cette étape est sautée.
-4. Vérifie chaque mod (`herdr-app check`) et passe au layout Herdr-Virgile.
+What it does, in order:
+1. Copies layouts/, mods/ and themes/ into herdr-app's home. A file or mod already there and
+   different is first backed up to ~/herdr-virgile-sauvegardes/<date>/, then replaced. Files that
+   herdr-app writes into a mod itself (*.d.ts, jsconfig.json, hidden files) stay.
+   Trace (pane-chat, chat, chat-models, chat-image) is not copied where Shepherdr is installed:
+   its own, complete Trace stays in place.
+2. Adds the Vault shortcut (cmd-shift-y) to keys.json, unless that key is already taken.
+3. Writes the state (etat/): the shared.json keys (Spaces groups, labels, icons and colors, Agents
+   groups and settings, Session settings) and what Spaces and the tab bar keep for each space
+   (expanded, open panel). herdr-app rewrites these files while it runs: the script waits until it
+   is closed (⌘Q; terminals keep running), writes, then reopens it on macOS. Without an etat/ folder
+   (the public repository), this step is skipped.
+4. Checks every mod (`herdr-app check`) and switches to the Herdr-Virgile layout.
 
-Il n'installe pas les plugins Claude Code : voir README.md.
+It doesn't install the Claude Code plugins: see README.md.
 """
 import argparse, datetime, filecmp, json, os, shutil, subprocess, sys, tempfile, time
 
@@ -101,8 +102,8 @@ class Install:
     def fichier(self, rel):
         src, dst = os.path.join(ICI, rel), os.path.join(self.home, rel)
         if os.path.isfile(dst) and filecmp.cmp(src, dst, shallow=False):
-            return "inchangé"
-        etat = "mis à jour" if os.path.exists(dst) else "ajouté"
+            return "unchanged"
+        etat = "updated" if os.path.exists(dst) else "added"
         if os.path.exists(dst):
             self.sauvegarder(dst)
         if not self.essai:
@@ -121,7 +122,7 @@ class Install:
         if not os.path.isdir(dst):
             if not self.essai:
                 shutil.copytree(src, dst, ignore=lambda _d, noms: [n for n in noms if a_lui(n)])
-            return "ajouté", len(voulus), 0
+            return "added", len(voulus), 0
         presents = set()
         for racine, dossiers, fichiers in os.walk(dst):
             dossiers[:] = [d for d in dossiers if not a_lui(d)]
@@ -131,7 +132,7 @@ class Install:
         changes = [r for r in voulus if r not in presents or not filecmp.cmp(os.path.join(src, r), os.path.join(dst, r), shallow=False)]
         en_trop = sorted(presents - voulus)
         if not changes and not en_trop:
-            return "inchangé", 0, 0
+            return "unchanged", 0, 0
         self.sauvegarder(dst)
         if not self.essai:
             for r in en_trop:
@@ -139,43 +140,43 @@ class Install:
             for r in changes:
                 os.makedirs(os.path.dirname(os.path.join(dst, r)), exist_ok=True)
                 shutil.copy2(os.path.join(src, r), os.path.join(dst, r))
-        return "mis à jour", len(changes), len(en_trop)
+        return "updated", len(changes), len(en_trop)
 
     def fichiers(self):
-        dire(f"\n1. Layout, mods et thème → {self.home}")
+        dire(f"\n1. Layout, mods and theme → {self.home}")
         p = self.paquet
-        dire(f"   layouts/{p['layout']}.json : {self.fichier(os.path.join('layouts', p['layout'] + '.json'))}")
+        dire(f"   layouts/{p['layout']}.json: {self.fichier(os.path.join('layouts', p['layout'] + '.json'))}")
         for t in p["themes"]:
-            dire(f"   themes/{t} : {self.fichier(os.path.join('themes', t))}")
+            dire(f"   themes/{t}: {self.fichier(os.path.join('themes', t))}")
         for m in p["mods"]:
             if m in p.get("trace", []) and self.shepherdr and os.path.isdir(os.path.join(self.home, "mods", m)):
-                dire(f"   mods/{m} : gardé (Shepherdr est installé ici : son Trace reste en place)")
+                dire(f"   mods/{m}: kept (Shepherdr is installed here: its Trace stays in place)")
                 continue
             etat, n, retires = self.mod(m)
-            detail = "" if etat == "inchangé" else f" ({n} fichier{'s' if n > 1 else ''}" + (f", {retires} retiré{'s' if retires > 1 else ''}" if retires else "") + ")"
-            dire(f"   mods/{m} : {etat}{detail}")
+            detail = "" if etat == "unchanged" else f" ({n} file{'s' if n != 1 else ''}" + (f", {retires} removed" if retires else "") + ")"
+            dire(f"   mods/{m}: {etat}{detail}")
 
     # ---- 2. le raccourci -------------------------------------------------------------------
     def touches(self):
-        dire("\n2. Raccourcis (keys.json)")
+        dire("\n2. Shortcuts (keys.json)")
         chemin = os.path.join(self.home, "keys.json")
         try:
             k = json.load(open(chemin, encoding="utf-8")) if os.path.exists(chemin) else {}
         except ValueError:
-            dire("   ! keys.json n'est pas du JSON valide : rien n'est ajouté.")
+            dire("   ! keys.json is not valid JSON: nothing added.")
             return
         changer = False
         for section, liens in self.paquet["touches"].items():
             for touche, action in liens.items():
                 deja = k.get(section, {}).get(touche)
                 if deja == action:
-                    dire(f"   {touche} → {action} : déjà là")
+                    dire(f"   {touche} → {action}: already there")
                 elif deja:
-                    dire(f"   ! {touche} sert déjà à « {deja} » : pas changé. Choisissez une autre touche pour {action}.")
+                    dire(f"   ! {touche} is already used for \"{deja}\": not changed. Pick another key for {action}.")
                 else:
                     k.setdefault(section, {})[touche] = action
                     changer = True
-                    dire(f"   {touche} → {action} : ajouté")
+                    dire(f"   {touche} → {action}: added")
         if changer:
             if os.path.exists(chemin):
                 self.sauvegarder(chemin)
@@ -193,7 +194,7 @@ class Install:
         return nouveau
 
     def etat(self, relancer):
-        dire("\n3. Votre état (groupes, étiquettes, icônes, réglages)")
+        dire("\n3. Your state (groups, labels, icons, settings)")
         etat = json.load(open(os.path.join(ICI, "etat", "shared.json"), encoding="utf-8"))
         stores = {}
         dos = os.path.join(ICI, "etat", "stores")
@@ -202,19 +203,19 @@ class Install:
                 if f.endswith(".json"):
                     stores[f[:-5]] = json.load(open(os.path.join(dos, f), encoding="utf-8"))
         if self.essai:
-            dire(f"   (essai) écrirait {len(etat)} clés de shared.json : {', '.join(sorted(etat))}")
+            dire(f"   (dry run) would write {len(etat)} shared.json keys: {', '.join(sorted(etat))}")
             for m, v in stores.items():
-                dire(f"   (essai) écrirait data/{m}/store.json : {', '.join(sorted(v))}")
+                dire(f"   (dry run) would write data/{m}/store.json: {', '.join(sorted(v))}")
             return
         if self.tourne():
-            dire("   herdr-app est ouvert : il récrit ces fichiers tant qu'il tourne.")
-            dire("   → Quittez herdr-app (⌘Q). Vos terminaux et agents continuent de tourner.")
-            dire("     L'état sera écrit dès la fermeture. (Ctrl-C pour passer ; plus tard : --etat-seulement)")
+            dire("   herdr-app is open: it rewrites these files while it runs.")
+            dire("   → Quit herdr-app (⌘Q). Your terminals and agents keep running.")
+            dire("     The state is written as soon as it closes. (Ctrl-C to skip; later: --state-only)")
             try:
                 while self.tourne():
                     time.sleep(1)
             except KeyboardInterrupt:
-                dire("\n   État non écrit. Relancez `python3 installer.py --etat-seulement` herdr-app fermé.")
+                dire("\n   State not written. Run `python3 installer.py --state-only` with herdr-app closed.")
                 return
             self.ferme_par_nous = True
             time.sleep(1.5)  # le temps que herdr-app finisse d'écrire shared.json en partant
@@ -222,7 +223,7 @@ class Install:
         try:
             actuel = json.load(open(chemin, encoding="utf-8")) if os.path.exists(chemin) else {}
         except ValueError:
-            dire("   ! shared.json n'est pas du JSON valide : état non écrit.")
+            dire("   ! shared.json is not valid JSON: state not written.")
             return
         fusionner = set(self.paquet["etat"]["fusionner"])
         neuf = dict(actuel)
@@ -232,13 +233,13 @@ class Install:
             if os.path.exists(chemin):
                 self.sauvegarder(chemin)
             self.ecrire_json(chemin, neuf)
-        dire(f"   shared.json : {len(etat)} clés ({', '.join(sorted(etat))})")
+        dire(f"   shared.json: {len(etat)} keys ({', '.join(sorted(etat))})")
         for m, valeurs in stores.items():
             c = os.path.join(self.home, "data", m, "store.json")
             try:
                 s = json.load(open(c, encoding="utf-8")) if os.path.exists(c) else {}
             except ValueError:
-                dire(f"   ! data/{m}/store.json illisible : passé.")
+                dire(f"   ! data/{m}/store.json unreadable: skipped.")
                 continue
             n = dict(s)
             for cle, v in valeurs.items():
@@ -251,7 +252,7 @@ class Install:
                 if os.path.exists(c):
                     self.sauvegarder(c)
                 self.ecrire_json(c, n, mode=0o600)
-            dire(f"   data/{m}/store.json : {', '.join(sorted(valeurs))}")
+            dire(f"   data/{m}/store.json: {', '.join(sorted(valeurs))}")
         # herdr-app a pu écrire shared.json juste après avoir fermé sa fenêtre : on relit, et on
         # récrit une fois si nos clés n'y sont plus.
         if self.ferme_par_nous:
@@ -261,31 +262,31 @@ class Install:
             except (OSError, ValueError):
                 relu = {}
             if any(relu.get(c) != neuf.get(c) for c in etat):
-                dire("   herdr-app a récrit shared.json en partant : état écrit une seconde fois.")
+                dire("   herdr-app rewrote shared.json as it quit: state written a second time.")
                 self.ecrire_json(chemin, {**relu, **{c: neuf[c] for c in etat}})
         if self.ferme_par_nous and relancer and sys.platform == "darwin":
-            dire("   Réouverture de herdr-app…")
+            dire("   Reopening herdr-app…")
             subprocess.run(["open", "-b", "dev.herdr.app"], capture_output=True)
             for _ in range(40):
                 if self.tourne():
                     break
                 time.sleep(0.5)
         elif self.ferme_par_nous:
-            dire("   Rouvrez herdr-app.")
+            dire("   Reopen herdr-app.")
 
     # ---- 4. vérifications --------------------------------------------------------------------
     def verifier(self):
-        dire("\n4. Vérification")
+        dire("\n4. Checks")
         if not self.cli:
-            dire("   ! herdr-app introuvable dans le PATH : vérifiez à la main (`herdr-app check <mod>`).")
+            dire("   ! herdr-app not found on PATH: check by hand (`herdr-app check <mod>`).")
             return
         if self.essai:
-            dire("   (essai) lancerait herdr-app check sur chaque mod, puis layout.switch")
+            dire("   (dry run) would run herdr-app check on every mod, then layout.switch")
             return
         v = self.herdr("--version", timeout=10)
         version = (v.stdout.strip().split()[-1] if v and v.stdout.strip() else "?")
         if version != self.paquet["herdr_app"]:
-            dire(f"   ! herdr-app {version} ici, {self.paquet['herdr_app']} à l'export : les copies de mods livrés (tabs, spaces, agents) peuvent ne plus suivre.")
+            dire(f"   ! herdr-app {version} here, {self.paquet['herdr_app']} at export: the copies of shipped mods (tabs, spaces, agents) may no longer match.")
         ok = True
         # `herdr-app check` fait tourner le mod une fois et garde ce qu'il range dans le shared.json de
         # sa maison (HERDR_APP_HOME). Sans spaces, Spaces y efface par exemple toutes les couleurs des
@@ -296,45 +297,45 @@ class Install:
             r = self.herdr("check", os.path.join(self.home, "mods", m), timeout=120, env=env)
             bon = r is not None and r.returncode == 0
             ok &= bon
-            dire(f"   {'ok' if bon else '!! ÉCHEC'}  {m}" + ("" if bon else f" : {(r.stderr or r.stdout).strip()[:300] if r else 'pas de réponse'}"))
+            dire(f"   {'ok' if bon else '!! FAILED'}  {m}" + ("" if bon else f": {(r.stderr or r.stdout).strip()[:300] if r else 'no answer'}"))
         shutil.rmtree(jetable, ignore_errors=True)
         if self.tourne():
             r = self.herdr("do", "layout.switch", json.dumps({"name": self.paquet["layout"]}), timeout=20)
-            dire(f"   layout {self.paquet['layout']} : {'affiché' if r and r.returncode == 0 else 'à choisir à la main (ctrl-shift-l)'}")
+            dire(f"   layout {self.paquet['layout']}: {'shown' if r and r.returncode == 0 else 'pick it by hand (ctrl-shift-l)'}")
         else:
-            dire(f"   Au prochain lancement : ctrl-shift-l ou `herdr-app do layout.switch '{{\"name\":\"{self.paquet['layout']}\"}}'`.")
+            dire(f"   Next time herdr-app starts: ctrl-shift-l or `herdr-app do layout.switch '{{\"name\":\"{self.paquet['layout']}\"}}'`.")
         return ok
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Installe le paquet Herdr-Virgile dans herdr-app.")
-    ap.add_argument("--essai", action="store_true", help="montrer sans rien écrire")
-    ap.add_argument("--home", help="la maison de herdr-app (défaut : $HERDR_APP_HOME ou ~/.config/herdr-app)")
+    ap = argparse.ArgumentParser(description="Installs the Herdr-Virgile package into herdr-app.")
+    ap.add_argument("--dry-run", "--essai", dest="essai", action="store_true", help="show, write nothing")
+    ap.add_argument("--home", help="herdr-app's home (default: $HERDR_APP_HOME or ~/.config/herdr-app)")
     g = ap.add_mutually_exclusive_group()
-    g.add_argument("--sans-etat", action="store_true", help="ne pas écrire l'état")
-    g.add_argument("--etat-seulement", action="store_true", help="écrire seulement l'état")
-    ap.add_argument("--pas-de-relance", action="store_true", help="ne pas rouvrir herdr-app après l'état")
+    g.add_argument("--no-state", "--sans-etat", dest="sans_etat", action="store_true", help="don't write the state")
+    g.add_argument("--state-only", "--etat-seulement", dest="etat_seulement", action="store_true", help="write the state only")
+    ap.add_argument("--no-relaunch", "--pas-de-relance", dest="pas_de_relance", action="store_true", help="don't reopen herdr-app after the state")
     args = ap.parse_args()
     i = Install(args)
     p = i.paquet
-    dire(f"Paquet {p['layout']} exporté le {p['exporte_le']} (herdr-app {p['herdr_app']}){' — ESSAI, rien n’est écrit' if i.essai else ''}")
+    dire(f"Package {p['layout']} exported {p['exporte_le']} (herdr-app {p['herdr_app']}){' — DRY RUN, nothing is written' if i.essai else ''}")
     if not os.path.isdir(i.home):
-        sys.exit(f"{i.home} n'existe pas : lancez herdr-app une fois, ou donnez --home.")
+        sys.exit(f"{i.home} doesn't exist: start herdr-app once, or pass --home.")
     if not args.etat_seulement:
         i.fichiers()
         i.touches()
     # Le dépôt public (et un export --sans-etat) n'a pas de dossier etat/ : l'état est sauté.
     a_etat = os.path.isfile(os.path.join(ICI, "etat", "shared.json"))
     if args.etat_seulement and not a_etat:
-        sys.exit("Ce paquet ne contient pas d'état (pas de dossier etat/) : rien à écrire.")
+        sys.exit("This package has no state (no etat/ folder): nothing to write.")
     if not args.sans_etat and not a_etat:
-        dire("\n3. Votre état : ce paquet n'en contient pas (pas de dossier etat/), rien à écrire.")
+        dire("\n3. Your state: this package has none (no etat/ folder), nothing to write.")
     elif not args.sans_etat:
         i.etat(not args.pas_de_relance)
     ok = i.verifier()
     if i.sauves:
-        dire(f"\nAnciennes versions sauvegardées dans {SAUVE}")
-    dire("\nPlugins Claude Code à installer sur chaque machine : voir README.md.")
+        dire(f"\nPrevious versions backed up to {SAUVE}")
+    dire("\nClaude Code plugins to install on each machine: see README.md.")
     sys.exit(0 if ok is not False else 1)
 
 

@@ -26,7 +26,7 @@ async function app(name, args) {
   const r = await exec("herdr-app", ["do", name, JSON.stringify(args)]);
   let out = {};
   try { out = JSON.parse(r.stdout || "{}"); } catch {}
-  if (r.code !== 0 || out.error) throw new Error(out.error || (r.stderr || "").trim() || `${name} a échoué`);
+  if (r.code !== 0 || out.error) throw new Error(out.error || (r.stderr || "").trim() || `${name} failed`);
   return out;
 }
 
@@ -59,16 +59,16 @@ export async function moveTab(cx, tabId, toSpaceId) {
   const all = spaces();
   const from = all.find((s) => (s.tabs ?? []).some((c) => c.id === tabId));
   const to = all.find((s) => s.id === toSpaceId);
-  if (!from || !to) return fail("Cet onglet ou ce space n'existe plus.");
+  if (!from || !to) return fail("This tab or space no longer exists.");
   if (from.id === to.id) return { id: tabId };
-  if ((from.machine ?? null) !== (to.machine ?? null)) return fail("Un onglet ne peut aller que dans un space de la même machine.");
+  if ((from.machine ?? null) !== (to.machine ?? null)) return fail("A tab can only move to a space on the same machine.");
   const tab = from.tabs.find((c) => c.id === tabId);
   const ps = panes().filter((p) => p.tab === tabId);
   const own = ps.filter((p) => p.terminal).map((p) => p.terminal);
   const chats = ps.filter((p) => p.mod === CHAT)
     .map((p) => ({ pane: p.pane, agent: terminals().find((k) => k.state === "live" && k.labels?.["herdr.chat"] === p.pane)?.address }))
     .filter((c) => c.agent);
-  if (!own.length && !chats.length) return fail("Cet onglet n'a pas de terminal à déplacer.");
+  if (!own.length && !chats.length) return fail("This tab has no terminal to move.");
 
   // 1. Les terminaux avec un volet : parqués, puis attendus (la commande répond avant que le core l'ait fait).
   for (const a of own) await app("terminal.park", { terminal: a });
@@ -76,7 +76,7 @@ export async function moveTab(cx, tabId, toSpaceId) {
     for (const a of own) { const l = await labels(a); if (l === null || l["herdr.tab"]) return false; }
     return true;
   });
-  if (!parked) return fail("Les terminaux n'ont pas quitté leur onglet à temps. Rien d'autre n'a été changé.");
+  if (!parked) return fail("The terminals didn't leave their tab in time. Nothing else was changed.");
 
   // 2. Tous dans un nouvel onglet du space cible.
   const tid = hex();
@@ -85,7 +85,7 @@ export async function moveTab(cx, tabId, toSpaceId) {
   const newId = `${to.machine ? `${to.machine}/` : ""}tb${tid}`;
   const moved = [...own, ...chats.map((c) => c.agent)];
   const adopted = await until(cx, () => moved.every((a) => panes().some((p) => p.tab === newId && p.terminal === a)));
-  if (!adopted) return fail("Les terminaux sont étiquetés pour le space cible, mais Herdr ne les y a pas encore montrés.");
+  if (!adopted) return fail("The terminals are labeled for the target space, but Herdr hasn't shown them there yet.");
 
   // 3. Son nom, les volets de chat d'avant fermés (leurs agents ont maintenant leur volet), Trace rouvert.
   if (tab?.named && tab.name) run("tab.rename", { id: newId, name: tab.name });
@@ -95,7 +95,7 @@ export async function moveTab(cx, tabId, toSpaceId) {
     try {
       const p = panes().find((x) => x.terminal === c.agent);
       const out = await app("pane.split", { direction: "right", pane: p.pane, mod: CHAT, props: { terminal: c.agent, look: "trace" } });
-      if (!out.pane) throw new Error("pas de volet");
+      if (!out.pane) throw new Error("no pane");
       setShared("chat.look", { ...(shared("chat.look") ?? {}), [out.pane]: "trace", last: "trace" });
       await hc(["label", c.agent, `herdr.chat=${out.pane}`]);
       await app("terminal.park", { terminal: c.agent });
@@ -105,5 +105,5 @@ export async function moveTab(cx, tabId, toSpaceId) {
       await hc(["keep", c.agent]);
     } catch { traceFailed++; }
   }
-  return { id: newId, error: traceFailed ? "Onglet déplacé, mais Trace n'a pas pu être rouvert : l'agent est affiché en Terminal." : null };
+  return { id: newId, error: traceFailed ? "Tab moved, but Trace couldn't be reopened: the agent is shown in Terminal." : null };
 }

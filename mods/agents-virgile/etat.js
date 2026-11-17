@@ -41,7 +41,7 @@ export const setCompact = (v) => setShared(COMPACT_KEY, Boolean(v));
 
 // Les onglets rangés (tab.settle de Herdr : mis de côté sur cet écran, ils tournent toujours ; un onglet
 // affiché, ou dont un agent vous attend, revient de lui-même). Leurs agents vont dans la section
-// « Rangés », en bas, repliée par défaut. En option, un onglet au repos depuis N jours est rangé tout seul.
+// « Settled », en bas, repliée par défaut. En option, un onglet au repos depuis N jours est rangé tout seul.
 const RANGES_OPEN = "agents-virgile.ranges.ouvert";
 export const rangesOpen = () => shared(RANGES_OPEN) === true;
 export const setRangesOpen = (v) => setShared(RANGES_OPEN, Boolean(v));
@@ -52,12 +52,12 @@ export const setAutoDays = (v) => setShared(RANGES_AUTO, AUTO_DAYS.includes(v) ?
 // Ranger l'onglet d'un agent (tout l'onglet : ses autres agents aussi), ou l'en sortir.
 export const settleArgs = (a, on = true) => [on ? "tab.settle" : "tab.unsettle", { id: a.tab }];
 
-// Le menu ☰ de l'en-tête (vues.js MenuView of "header") : Vue kanban, Replier la liste, Ranger
-// automatiquement, le tri (un titre, deux lignes), Nouveau groupe (après un trait), et s'il y a des
-// groupes, les replier/déplier.
+// Le menu ☰ de l'en-tête (vues.js MenuView of "header") : Kanban view, Auto-settle, Collapse the
+// list, le tri (un titre, deux lignes), New group (après un trait), et s'il y a des
+// groupes, Collapse/Expand all groups.
 export const headerMenuHeight = () => listHeight(Object.keys(data().groups).length ? 8 : 6, 1, 1);
-// Le menu d'un agent : Ouvrir, Aperçu, Épingler, Ranger, Déplacer, Nouveau groupe, (Retirer du groupe),
-// Vue kanban ; deux traits.
+// Le menu d'un agent : Open, Peek, Pin, Settle its tab, Move to a group, New group, (Remove from group),
+// Kanban view ; deux traits.
 export const agentMenuHeight = (grouped) => listHeight(grouped ? 8 : 7, 0, 2);
 
 // Un menu ouvert vers le haut depuis un point (la liste est en bas de la barre), sinon vers le bas.
@@ -71,7 +71,7 @@ export const chrome = (name) => `mods/workspace-chrome/${name}.svg`;
 export const machineOf = (addr) => (addr && addr.includes("/") ? addr.slice(0, addr.indexOf("/")) : null);
 const short = (x) => String(x ?? "").split("/").pop();
 
-// Un mot d'état de terminal comme agents() les donne : une erreur compte comme « vous attend », et
+// Un mot d'état de terminal comme agents() les donne : une erreur compte comme « needs you », et
 // « done » redevient « idle » une fois vu, comme dans agents() : Herdr pose sur le terminal
 // l'étiquette herdr.seen = le dernier tour regardé (vu quand elle atteint `turn`).
 const word = (k) => {

@@ -160,8 +160,10 @@ export default class ProfileView extends View {
       ? "Rows in time order, not to scale · ▶ call that opens a context (open head: background) · dashed: return · ◆ inline skill · bar: context at work, with its tokens"
       : "◆ inline skill · ■ new context (same hue: copy of the caller) · ⟲ compaction · tokens: those of the context opened";
 
-    return v_flex().id("profile").size_full().min_h(0).when(overlay, (e) => e.h(720)).rounded(10).overflow_hidden()
-      .bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(13)
+    // As a popup, Herdr draws the frame (6 px rounded border, shadow) without clipping what is inside it: the
+    // background is rounded to 5 px (the frame's inner radius) with no border of its own; as a panel, its own frame.
+    return v_flex().id("profile").size_full().min_h(0).when(overlay, (e) => e.h(720)).rounded(overlay ? 5 : 10).overflow_hidden()
+      .bg(t.background).when(!overlay, (e) => e.border_1().border_color(t.border)).text_color(t.foreground).text_size(13)
       // Header: title, session, view switch, "All calls", browser page, Esc.
       .child(h_flex().flex_none().px(14).pt(12).pb(8).gap(12).items_center()
         .child(div().flex_none().font_semibold().child("Profile"))

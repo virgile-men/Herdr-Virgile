@@ -15,6 +15,11 @@ import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { exec, appHome, writeTextFile } from "herdr";
 import { cible, session, sh, machineDe } from "./claude.js";
 import { noterAttente } from "./notifs.js";
+// Dates written by hand: the mod runtime ignores toLocale*'s locale and options ("11/16/2026, 02:56:15 AM").
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const p2 = (n) => String(n).padStart(2, "0");
+const hhmm = (d) => `${p2(d.getHours())}:${p2(d.getMinutes())}`;
+const dayMonth = (d) => `${d.getDate()} ${MONTHS[d.getMonth()]}`;
 
 const MAX_RULE = 200;
 const SAME = 0.6;
@@ -107,7 +112,7 @@ export class SectionRegles {
     this.occupe = false;
     this.edition = null;    // { id, etat }
     this.ouvert = { ajouter: false, decidees: false };
-    this.nouvelle = InputState.new({ placeholder: "Une règle à garder (une ligne, sans secret)" });
+    this.nouvelle = InputState.new({ placeholder: "A rule to keep (one line, no secrets)" });
     this.nouvelle.on("focus", (_e, cx) => { this.saisie = "nouvelle"; cx.notify(); });
     this.nouvelle.on("blur", (_e, cx) => { if (this.saisie === "nouvelle") this.saisie = null; cx.notify(); });
   }
@@ -128,7 +133,7 @@ export class SectionRegles {
 
   async lire(chemin) {
     const r = await sh(LIRE, [chemin], this.machine, 20000);
-    if (r.code !== 0) throw new Error((r.stderr || "lecture impossible").trim().slice(0, 200));
+    if (r.code !== 0) throw new Error((r.stderr || "couldn't read the file").trim().slice(0, 200));
     const [path, on, sum, ...reste] = r.stdout.split("\n");
     return { path, plugin: on === "1", sum, texte: sum === "absent" ? "" : reste.join("\n") };
   }
@@ -143,7 +148,7 @@ export class SectionRegles {
       const on = this.machine ? ["--on", this.machine] : [];
       const r = await exec("sh", ["-c", PATH_HC + 'f="$1"; shift; hc exec -i "$@" < "$f"', "regles", tmp, ...on, ECRIRE(path, attendu, mode)]);
       if (r.code === 9 || /a changé/.test(r.stderr)) return false;
-      if (r.code !== 0) throw new Error((r.stderr || "écriture impossible").trim().slice(0, 200));
+      if (r.code !== 0) throw new Error((r.stderr || "couldn't write the file").trim().slice(0, 200));
       return true;
     } finally {
       await exec("sh", ["-c", 'rm -f -- "$1"', "regles", tmp]);
@@ -163,7 +168,7 @@ export class SectionRegles {
         const st = await this.lire("@store");
         if (this.addr !== addr) return;
         let data = { items: [] };
-        if (st.texte.trim()) { try { data = JSON.parse(st.texte); } catch { throw new Error(`Store illisible : ${st.path}`); } }
+        if (st.texte.trim()) { try { data = JSON.parse(st.texte); } catch { throw new Error(`Unreadable store: ${st.path}`); } }
         if (!Array.isArray(data.items)) data.items = [];
         this.store = { path: st.path, sum: st.sum, data, plugin: st.plugin };
         this.erreur = null;
@@ -190,7 +195,7 @@ export class SectionRegles {
         return data;
       }
     }
-    throw new Error("Le store change sans arrêt : réessayez.");
+    throw new Error("The store keeps changing: try again.");
   }
 
   // Ajoute la règle à CLAUDE.md (portée globale ou ce dépôt). -> le message à afficher.
@@ -199,11 +204,11 @@ export class SectionRegles {
     for (let i = 0; i < 3; i += 1) {
       const f = await this.lire(cible);
       const apres = withRule(f.texte, regle);
-      if (apres === undefined) throw new Error(`Les marqueurs claude-reflect de ${f.path} sont cassés : à réparer à la main, rien n'est écrit.`);
-      if (apres === f.texte) return `Déjà dans ${f.path}.`;
-      if (await this.ecrire(f.path, apres, f.sum, "644")) return `Enregistrée dans ${f.path}.`;
+      if (apres === undefined) throw new Error(`The claude-reflect markers in ${f.path} are broken: fix them by hand. Nothing was written.`);
+      if (apres === f.texte) return `Already in ${f.path}.`;
+      if (await this.ecrire(f.path, apres, f.sum, "644")) return `Saved to ${f.path}.`;
     }
-    throw new Error("Le fichier change sans arrêt : réessayez.");
+    throw new Error("The file keeps changing: try again.");
   }
 
   agir(cx, travail) {
@@ -220,9 +225,9 @@ export class SectionRegles {
 
   enregistrer(item, portee, cx, texte) {
     const regle = cleanRule(texte ?? item.rule);
-    if (!regle) { this.erreur = "Règle refusée : une ligne, sans secret, 200 caractères au plus."; cx.notify(); return; }
+    if (!regle) { this.erreur = "Rule rejected: one line, no secrets, 200 characters max."; cx.notify(); return; }
     const projet = portee === "project" ? (item.project || this.racine) : item.project;
-    if (portee === "project" && !projet) { this.erreur = "Aucun dossier de projet connu pour cette règle."; cx.notify(); return; }
+    if (portee === "project" && !projet) { this.erreur = "No known project folder for this rule."; cx.notify(); return; }
     this.agir(cx, async () => {
       const msg = await this.ajouterAuFichier(regle, portee, projet);
       await this.changerStore((data) => {
@@ -243,7 +248,7 @@ export class SectionRegles {
         if (!one || one.status !== "pending") return false;
         one.status = "skipped";
       });
-      return "Ignorée.";
+      return "Ignored.";
     });
   }
 
@@ -251,8 +256,8 @@ export class SectionRegles {
   // ne la reproposera pas).
   ajouter(portee, cx) {
     const regle = cleanRule(this.nouvelle.value());
-    if (!regle) { this.erreur = "Règle refusée : une ligne, sans secret, 200 caractères au plus."; cx.notify(); return; }
-    if (portee === "project" && !this.racine) { this.erreur = "Pas de session suivie : pas de dépôt où écrire."; cx.notify(); return; }
+    if (!regle) { this.erreur = "Rule rejected: one line, no secrets, 200 characters max."; cx.notify(); return; }
+    if (portee === "project" && !this.racine) { this.erreur = "No active session: no repo to write to."; cx.notify(); return; }
     this.agir(cx, async () => {
       const msg = await this.ajouterAuFichier(regle, portee, this.racine);
       const now = Date.now();
@@ -268,13 +273,13 @@ export class SectionRegles {
   pause(cx) {
     this.agir(cx, async () => {
       const d = await this.changerStore((data) => { data.paused = data.paused !== true; });
-      return d.paused ? "Pause : reflect-mod ne vérifie plus vos messages." : "Reprise : les messages courts sont de nouveau vérifiés.";
+      return d.paused ? "Paused: reflect-mod no longer checks your messages." : "Resumed: short messages are checked again.";
     });
   }
 
   modifier(item, cx) {
     if (this.edition?.id === item.id) { this.edition = null; cx.notify(); return; }
-    const etat = InputState.new({ placeholder: "La règle, reformulée" });
+    const etat = InputState.new({ placeholder: "The rule, rephrased" });
     etat.set_value(item.rule);
     etat.on("submit", (_e, cx) => this.enregistrer(item, item.scope, cx, etat.value()));
     this.edition = { id: item.id, etat };
@@ -288,7 +293,7 @@ export class SectionRegles {
     const attente = items.filter((l) => l.status === "pending").sort((a, b) => (ici(b) - ici(a)) || b.count - a.count || b.lastAt - a.lastAt);
     const faites = items.filter((l) => l.status !== "pending").sort((a, b) => b.lastAt - a.lastAt);
     const pret = !this.occupe;
-    const machine = this.machine ?? "Ce serveur";
+    const machine = this.machine ?? "This computer";
 
     const bouton = (id, texte, action, principal = false) => div().id(id).h(26).px(9).flex().items_center().rounded(7).text_size(12)
       .when(principal, (e) => e.bg(pret ? t.solid : t.raised).text_color(pret ? t.solid_foreground : t.dim))
@@ -298,7 +303,7 @@ export class SectionRegles {
     const champ = (etat, id, quoi) => div().id(id).flex_1().min_w(0).h(30).px(10).flex().items_center().rounded(8).border_1()
       .border_color(this.saisie === quoi ? t.accent : t.border).cursor_text().on_mouse_down("left", (_e, cx) => cx.stop_propagation())
       .child(Input.new(etat).h_full().text_size(12).text_color(t.foreground));
-    const portee = (l) => (l.scope === "global" ? "Globale" : `Dépôt · ${nomDossier(l.project)}`);
+    const portee = (l) => (l.scope === "global" ? "Global" : `Repo · ${nomDossier(l.project)}`);
     const repli = (cle, texte) => h_flex().id(`rg-${cle}`).px(14).pt(8).pb(4).gap(6).items_center().cursor_pointer()
       .on_click((_e, cx) => { this.ouvert[cle] = !this.ouvert[cle]; cx.notify(); })
       .child(div().text_size(11.5).font_semibold().text_color(t.dim).child(texte))
@@ -312,40 +317,40 @@ export class SectionRegles {
           .child(div().px(5).py(1).rounded(4).border_1().border_color(t.border).child(portee(l)))
           .when(l.count > 1, (e) => e.child(div().child(`×${l.count}`)))
           .child(div().flex_1())
-          .child(div().child(new Date(l.lastAt).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" }))))
+          .child(div().child(dayMonth(new Date(l.lastAt)))))
         .when(!edite, (e) => e.child(div().text_size(13).child(l.rule)))
         .when(edite, (e) => e.child(h_flex().child(champ(this.edition.etat, `rg-e-${l.id}`, `e-${l.id}`))))
         .child(h_flex().gap(6).flex_wrap()
-          .child(bouton(`rg-s-${l.id}`, l.scope === "project" ? "Enregistrer dans ./CLAUDE.md" : "Enregistrer dans ~/.claude/CLAUDE.md",
+          .child(bouton(`rg-s-${l.id}`, l.scope === "project" ? "Save to ./CLAUDE.md" : "Save to ~/.claude/CLAUDE.md",
             (cx) => this.enregistrer(l, l.scope, cx, edite ? this.edition.etat.value() : undefined), true))
-          .child(bouton(`rg-o-${l.id}`, l.scope === "project" ? "Globale plutôt" : "Ce dépôt plutôt",
+          .child(bouton(`rg-o-${l.id}`, l.scope === "project" ? "Global instead" : "This repo instead",
             (cx) => this.enregistrer(l, l.scope === "project" ? "global" : "project", cx, edite ? this.edition.etat.value() : undefined)))
-          .child(bouton(`rg-m-${l.id}`, edite ? "Annuler" : "Modifier", (cx) => this.modifier(l, cx)))
-          .child(bouton(`rg-i-${l.id}`, "Ignorer", (cx) => this.ignorer(l, cx))));
+          .child(bouton(`rg-m-${l.id}`, edite ? "Cancel" : "Edit", (cx) => this.modifier(l, cx)))
+          .child(bouton(`rg-i-${l.id}`, "Ignore", (cx) => this.ignorer(l, cx))));
     };
 
     const ligneFaite = (l) => h_flex().id(`rg-h-${l.id}`).h(26).flex_none().mx(6).px(8).gap(8).items_center().rounded(7)
-      .hover((s) => s.bg(t.hover)).tooltip(`${l.rule}\n${portee(l)} · ${l.status === "saved" ? "enregistrée" : "ignorée"}`)
+      .hover((s) => s.bg(t.hover)).tooltip(`${l.rule}\n${portee(l)} · ${l.status === "saved" ? "saved" : "ignored"}`)
       .child(div().w(70).flex_none().text_size(11).text_color(l.status === "saved" ? t.foreground : t.dim)
-        .child(l.status === "saved" ? "enregistrée" : "ignorée"))
+        .child(l.status === "saved" ? "saved" : "ignored"))
       .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(l.status === "saved" ? t.foreground : t.muted).child(l.rule));
 
     const out = [];
     if (this.store?.plugin === false) out.push(div().mx(14).pb(6).text_size(12).text_color(t.dim)
-      .child(`Le plugin reflect-mod n'est pas actif sur ${machine} : rien de nouveau n'arrivera ici.`));
+      .child(`The reflect-mod plugin isn't enabled on ${machine}: nothing new will show up here.`));
     out.push(...attente.map(carte));
     if (!attente.length) out.push(div().mx(14).h(24).text_size(12).text_color(t.dim)
-      .child(this.store ? `Aucune règle en attente · ${machine}` : this.erreur ? "" : "Lecture du store…"));
+      .child(this.store ? `No pending rules · ${machine}` : this.erreur ? "" : "Reading the store…"));
     if (this.erreur) out.push(div().mx(14).pb(4).text_size(11.5).text_color(t.ansi1).child(this.erreur));
     if (this.note) out.push(div().mx(14).pb(4).text_size(11.5).text_color(t.dim).child(this.note));
-    out.push(repli("ajouter", "Ajouter une règle"));
+    out.push(repli("ajouter", "Add a rule"));
     if (this.ouvert.ajouter) out.push(v_flex().flex_none().mx(14).gap(8)
       .child(h_flex().child(champ(this.nouvelle, "rg-nouvelle", "nouvelle")))
       .child(h_flex().gap(6).flex_wrap()
-        .child(bouton("rg-n-global", "Dans ~/.claude/CLAUDE.md", (cx) => this.ajouter("global", cx)))
-        .child(bouton("rg-n-projet", "Dans ./CLAUDE.md", (cx) => this.ajouter("project", cx)))));
+        .child(bouton("rg-n-global", "Add to ~/.claude/CLAUDE.md", (cx) => this.ajouter("global", cx)))
+        .child(bouton("rg-n-projet", "Add to ./CLAUDE.md", (cx) => this.ajouter("project", cx)))));
     if (faites.length) {
-      out.push(repli("decidees", `Décidées · ${faites.length}`));
+      out.push(repli("decidees", `Decided · ${faites.length}`));
       if (this.ouvert.decidees) out.push(...faites.slice(0, 80).map(ligneFaite));
     }
     return out;

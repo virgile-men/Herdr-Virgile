@@ -3815,7 +3815,7 @@ export default class Chat extends View {
     return h_flex().id("chat-sugg").w_full().pb(8).gap(8).items_center()
       .child(div().id("chat-sugg-0").min_w(0).max_w_full().h(32).px(14).flex().items_center().rounded(999).border_1()
         .border_color(k.border).bg(t.background).text_size(13).text_color(k.prose).cursor_pointer()
-        .hover((s) => s.bg(t.hover)).tooltip("Suggestion de Claude Code · Tab ou clic pour la reprendre")
+        .hover((s) => s.bg(t.hover)).tooltip("Claude Code suggestion · Tab or click to use it")
         .on_click((_e, cx) => this.takeSugg(cx))
         .child(div().min_w(0).truncate().child(this.sugg)));
   }

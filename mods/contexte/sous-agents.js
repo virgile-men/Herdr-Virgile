@@ -18,7 +18,7 @@ const MAX_TASKS = 200, MAX_AFTER = 20, MAX_TITLE = 120;
 const COULEUR_TIER = { fable: "#7F77DD", heavy: "#D85A30", careful: "#BA7517", medium: "#378ADD", light: "#1D9E75", other: "#888780" };
 const MODELE_TIER = { fable: ["Fable", "high"], heavy: ["Opus", "xhigh"], careful: ["Opus", "high"], medium: ["Opus", "medium"], light: ["Opus", "low"] };
 const ACCENT = "#8f8cf4", FINI = "#5fbf8f";
-const PHASE_MOT = { plan: "Plan", design: "Conception", delegate: "Tâches", review: "Revue", close: "Terminé" };
+const PHASE_MOT = { plan: "Plan", design: "Design", delegate: "Tasks", review: "Review", close: "Done" };
 
 // Le journal principal (appels de progression) puis chaque sous-agent : sa fiche et ce que son journal a gagné.
 // Args : <journal> <depuis> <dossier subagents> puis "<id>=<depuis>=<dernier id>" pour ceux déjà lus.
@@ -176,7 +176,7 @@ export class SousAgents {
 
   enCours() { return this.liste().filter((a) => a.enCours); }
 
-  // Les lignes de la section « Sous-agents », sous son titre, à ajouter à la liste de Session.
+  // Les lignes de la section « Sub-agents », sous son titre, à ajouter à la liste de Session.
   // sbx : les groupes de sandboxes (sbx.js), placés après les sous-agents en cours (enCours) et à la fin (fin).
   elements(t, maintenant = Date.now(), sbx = { enCours: [], fin: [] }) {
     const toutes = this.liste();
@@ -203,26 +203,26 @@ export class SousAgents {
       const modele = a.effort ? `${nomModele(a.modele)} · ${a.effort}` : nomModele(a.modele || a.meta?.model || "");
       const inactif = a.enCours && a.vu && maintenant - a.vu > 5 * 60000;
       return v_flex().id(`sa-${a.id}`).flex_none().mx(6).px(8).py(6).gap(4).rounded(7).hover((s) => s.bg(t.hover))
-        .tooltip(`${a.description}\n${a.type || "agent"}${a.fond ? " · en arrière-plan" : ""}`)
+        .tooltip(`${a.description}\n${a.type || "agent"}${a.fond ? " · in the background" : ""}`)
         .child(h_flex().gap(8).items_center()
           .child(a.enCours
             ? svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(couleur).spin(900)
             : div().size(10).flex_none().rounded(5).bg(couleur))
           .child(div().flex_1().min_w(0).truncate().child(a.description))
-          .when(a.tour > 1, (e) => e.child(div().flex_none().text_size(11).text_color(t.dim).child(`tour ${a.tour}`)))
+          .when(a.tour > 1, (e) => e.child(div().flex_none().text_size(11).text_color(t.dim).child(`run ${a.tour}`)))
           .child(div().flex_none().text_size(12).text_color(t.muted).child(a.debut ? duree(fin(a) - a.debut) : "")))
         .child(h_flex().pl(18).gap(8).items_center().text_size(11.5).text_color(t.muted)
           .child(div().flex_none().child(modele))
-          .child(div().flex_none().text_color(t.dim).child(`ctx ${Math.round(ctxR * 100)} %`))
+          .child(div().flex_none().text_color(t.dim).child(`ctx ${Math.round(ctxR * 100)}%`))
           .child(div().flex_1())
           .child(div().flex_none().child(`${tokens(a.tokens)} tok`))
-          .child(div().flex_none().w(48).text_right().child(`≈${dollars(a.cout)}`)))
+          .child(div().flex_none().w(48).text_right().child(`≈ ${dollars(a.cout)}`)))
         .child(div().pl(18).child(barre(ctxR, ctxR > 0.8 ? t.ansi1 : t.dim, 3)))
         .when(Boolean(a.pas), (e) => e.child(h_flex().pl(18).gap(8).items_center().text_size(11.5)
           .child(div().w(90).flex_none().child(barre(a.pas.total ? a.pas.done / a.pas.total : 0, a.enCours ? couleur : FINI, 5)))
           .child(div().flex_none().text_color(t.muted).child(a.pas.total ? `${a.pas.done}/${a.pas.total}` : `${a.pas.done}`))
           .child(div().flex_1().min_w(0).truncate().text_color(t.dim).child(a.pas.note ?? ""))))
-        .when(inactif, (e) => e.child(div().pl(18).text_size(11).text_color(t.dim).child(`Rien écrit depuis ${duree(maintenant - a.vu)}`)));
+        .when(inactif, (e) => e.child(div().pl(18).text_size(11).text_color(t.dim).child(`Nothing written for ${duree(maintenant - a.vu)}`)));
     };
 
     const lignePrevue = (p) => {
@@ -232,7 +232,7 @@ export class SousAgents {
         .child(div().size(10).flex_none().rounded(5).border_1().border_color(couleur))
         .child(div().flex_none().text_size(12).text_color(t.dim).child(`${p.n}.`))
         .child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(p.title))
-        .when(p.after.length > 0, (e) => e.child(div().flex_none().text_size(11).text_color(t.dim).child(`après ${p.after.join(", ")}`)))
+        .when(p.after.length > 0, (e) => e.child(div().flex_none().text_size(11).text_color(t.dim).child(`after ${p.after.join(", ")}`)))
         .when(Boolean(m), (e) => e.child(div().flex_none().text_size(11).text_color(t.dim).child(`${m[0]} · ${m[1]}`)));
     };
 
@@ -245,33 +245,33 @@ export class SousAgents {
           .child(div().size(8).flex_none().rounded(4).bg(f.isFinished ? FINI : ACCENT))
           .child(div().flex_1().min_w(0).truncate().font_semibold().child(f.title))
           .child(div().flex_none().px(6).py(1).rounded(4).bg(f.isFinished ? FINI : ACCENT).text_size(11).font_semibold().text_color("#ffffff")
-            .child(f.isFinished ? "Terminé" : ["plan", "design"].includes(f.phase) ? PHASE_MOT[f.phase]
-              : `${PHASE_MOT[f.phase]} ${f.total ? `${f.done}/${f.total}` : `${enCours.length} en cours`}`)))
+            .child(f.isFinished ? "Done" : ["plan", "design"].includes(f.phase) ? PHASE_MOT[f.phase]
+              : `${PHASE_MOT[f.phase]} ${f.total ? `${f.done}/${f.total}` : `${enCours.length} running`}`)))
         .child(h_flex().gap(8).items_center()
           .child(div().flex_1().child(barre(r, f.isFinished ? FINI : ACCENT, 8)))
-          .child(div().flex_none().w(38).text_right().text_size(12).text_color(t.muted).child(`${Math.round(r * 100)} %`))));
+          .child(div().flex_none().w(38).text_right().text_size(12).text_color(t.muted).child(`${Math.round(r * 100)}%`))));
     }
     // Le cumul.
     if (toutes.length) {
       out.push(h_flex().flex_none().mx(14).gap(14).text_size(12).text_color(t.muted)
-        .child(div().child(`≈${dollars(cumul.cout)}`))
+        .child(div().child(`≈ ${dollars(cumul.cout)}`))
         .child(div().child(`${tokens(cumul.tokens)} tokens`))
         .child(div().child(duree(cumul.temps)))
         .child(div().flex_1())
-        .child(div().text_color(t.dim).child(`${toutes.length} agent${toutes.length > 1 ? "s" : ""}`)));
+        .child(div().text_color(t.dim).child(`${toutes.length} agent${toutes.length === 1 ? "" : "s"}`)));
     }
     if (!toutes.length && !prevus.length && !f) {
       if (!sbx.enCours.length && !sbx.fin.length) out.push(div().mx(14).h(24).text_size(12).text_color(this.erreur ? t.ansi1 : t.dim)
-        .child(this.erreur ?? (this.lu ? "Aucun sous-agent pour l'instant" : "Lecture des sous-agents…")));
+        .child(this.erreur ?? (this.lu ? "No sub-agents yet" : "Reading sub-agents…")));
       return [...out, ...sbx.enCours, ...sbx.fin];
     }
-    if (enCours.length) out.push(sousTitre(`En cours · ${enCours.length}`), ...enCours.map(ligneAgent));
+    if (enCours.length) out.push(sousTitre(`Running · ${enCours.length}`), ...enCours.map(ligneAgent));
     out.push(...sbx.enCours);
-    if (prevus.length) out.push(sousTitre(`Prévus · ${prevus.length}`), ...prevus.map(lignePrevue));
+    if (prevus.length) out.push(sousTitre(`Planned · ${prevus.length}`), ...prevus.map(lignePrevue));
     if (finis.length) {
       out.push(h_flex().id("sa-finis").px(14).pt(10).pb(4).gap(6).items_center().cursor_pointer()
         .on_click((_e, cx) => { this.finisOuverts = !finisOuverts; cx.notify(); })
-        .child(div().text_size(11.5).font_semibold().text_color(t.dim).child(`Terminés · ${finis.length}`))
+        .child(div().text_size(11.5).font_semibold().text_color(t.dim).child(`Finished · ${finis.length}`))
         .child(svg(`mods/files/chevron-${finisOuverts ? "down" : "right"}.svg`).size(12).flex_none().text_color(t.dim)));
       if (finisOuverts) out.push(...finis.slice(0, 60).map(ligneAgent));
     }

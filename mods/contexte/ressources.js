@@ -177,10 +177,10 @@ export async function mesurer(mesures, liste) {
       const r = await exec("sh", ["-c", RESSOURCES, "ressources", ...siens.map((a) => String(a.pid))], { on: m, timeout: 20000 });
       const lu = lireRessources(r.stdout);
       const at = Date.now();
-      out.machines[m ?? ""] = mesures.machine(m, lu.machine, at) ?? { erreur: (r.stderr || "pas de réponse").trim().slice(0, 160) };
+      out.machines[m ?? ""] = mesures.machine(m, lu.machine, at) ?? { erreur: (r.stderr || "no response").trim().slice(0, 160) };
       for (const a of siens) {
         const b = lu.pids[String(a.pid)];
-        out.agents[a.cle] = b && b.nproc ? mesures.calcule(a.cle, a.pid, b, lu.machine, at) : { erreur: "processus introuvable" };
+        out.agents[a.cle] = b && b.nproc ? mesures.calcule(a.cle, a.pid, b, lu.machine, at) : { erreur: "process not found" };
       }
     } catch (e) {
       out.machines[m ?? ""] = { erreur: String(e).slice(0, 160) };
@@ -191,33 +191,34 @@ export async function mesurer(mesures, liste) {
 }
 
 // ---- Formats -------------------------------------------------------------------------------
-const virgule = (x) => String(x).replace(".", ",");
-export const octets = (n) => (n == null || !isFinite(n) ? "—" : n >= 1e9 ? `${virgule((n / 1e9).toFixed(1))} Go` : n >= 1e6 ? `${Math.round(n / 1e6)} Mo` : n >= 1e3 ? `${Math.round(n / 1e3)} ko` : `${Math.round(n)} o`);
-export const debit = (n) => (n == null || !isFinite(n) ? "—" : n >= 1e6 ? `${virgule((n / 1e6).toFixed(1))} Mo/s` : n >= 1e3 ? `${virgule((n / 1e3).toFixed(n >= 1e4 ? 0 : 1))} ko/s` : `${Math.round(n)} o/s`);
-export const pourcent = (x) => (x == null || !isFinite(x) ? "—" : `${x >= 10 ? Math.round(x) : virgule(x.toFixed(1))} %`);
+// (Le nom est resté ; les nombres s'écrivent désormais avec un point décimal, à l'anglaise.)
+const virgule = (x) => String(x);
+export const octets = (n) => (n == null || !isFinite(n) ? "—" : n >= 1e9 ? `${virgule((n / 1e9).toFixed(1))} GB` : n >= 1e6 ? `${Math.round(n / 1e6)} MB` : n >= 1e3 ? `${Math.round(n / 1e3)} KB` : `${Math.round(n)} B`);
+export const debit = (n) => (n == null || !isFinite(n) ? "—" : n >= 1e6 ? `${virgule((n / 1e6).toFixed(1))} MB/s` : n >= 1e3 ? `${virgule((n / 1e3).toFixed(n >= 1e4 ? 0 : 1))} KB/s` : `${Math.round(n)} B/s`);
+export const pourcent = (x) => (x == null || !isFinite(x) ? "—" : `${x >= 10 ? Math.round(x) : virgule(x.toFixed(1))}%`);
 const enCours = (x, f) => (x == null ? "…" : f(x));
 export const reseau = (v) => `↓ ${enCours(v.rx, debit)} ↑ ${enCours(v.tx, debit)}`;
 
-// Les trois valeurs d'un agent en une ligne : « CPU 12 % · RAM 488 Mo · ↓ 3,1 ko/s ↑ 0,4 ko/s ».
+// Les trois valeurs d'un agent en une ligne : « CPU 12% · RAM 488 MB · ↓ 3.1 KB/s ↑ 0.4 KB/s ».
 export const resume = (v) => (!v || v.erreur ? null : `CPU ${enCours(v.cpu, pourcent)} · RAM ${octets(v.rss)} · ${reseau(v)}`);
-// Celles d'une machine : « CPU 23 % · RAM 75 % · ↓ 2 ko/s ↑ 600 ko/s ».
+// Celles d'une machine : « CPU 23% · RAM 75% · ↓ 2 KB/s ↑ 600 KB/s ».
 export const resumeMachine = (m) => (!m || m.erreur ? null : `CPU ${enCours(m.cpu, pourcent)} · RAM ${pourcent(m.utilisee / (m.total || 1) * 100)} · ${reseau(m)}`);
 
 // Le détail d'un agent en infobulle : processus, machine, et comment c'est mesuré.
 export const detail = (v) => {
   if (!v || v.erreur) return v?.erreur ?? "";
   const m = v.machine;
-  const lignes = [`${v.nproc} processus (l'agent et ce qu'il a lancé)`, "CPU : 100 % = un cœur entier"];
-  if (m) lignes.push(`Machine : ${m.cpus} cœur${m.cpus > 1 ? "s" : ""}, RAM ${octets(m.total - m.dispo)} utilisés sur ${octets(m.total)} (${pourcent((1 - m.dispo / (m.total || 1)) * 100)})`);
-  lignes.push(m?.os === "linux" ? "Réseau : connexions TCP encore ouvertes (estimation basse)" : "Réseau : octets du processus (nettop)");
+  const lignes = [`${v.nproc} process${v.nproc === 1 ? "" : "es"} (the agent and what it started)`, "CPU: 100% = one full core"];
+  if (m) lignes.push(`Machine: ${m.cpus} core${m.cpus === 1 ? "" : "s"}, RAM ${octets(m.total - m.dispo)} used of ${octets(m.total)} (${pourcent((1 - m.dispo / (m.total || 1)) * 100)})`);
+  lignes.push(m?.os === "linux" ? "Network: TCP connections still open (a low estimate)" : "Network: the process's own bytes (nettop)");
   return lignes.join("\n");
 };
 
 // Le détail d'une machine en infobulle.
 export const detailMachine = (m) => {
   if (!m || m.erreur) return m?.erreur ?? "";
-  return [`${m.cpus} cœur${m.cpus > 1 ? "s" : ""} · CPU : 100 % = tous les cœurs${m.charge != null ? ` · charge ${virgule(m.charge.toFixed(2))}` : ""}`,
-    `RAM ${octets(m.utilisee)} utilisés sur ${octets(m.total)}`,
-    `Réseau : interface ${m.iface || "?"} (route par défaut)`,
-    m.os === "linux" ? "CPU : cgroup racine (le conteneur LXC entier, ou l'hôte)" : "CPU : somme des %CPU de ps (moyenne glissante)"].join("\n");
+  return [`${m.cpus} core${m.cpus === 1 ? "" : "s"} · CPU: 100% = all cores${m.charge != null ? ` · load ${virgule(m.charge.toFixed(2))}` : ""}`,
+    `RAM ${octets(m.utilisee)} used of ${octets(m.total)}`,
+    `Network: interface ${m.iface || "?"} (default route)`,
+    m.os === "linux" ? "CPU: root cgroup (the whole LXC container, or the host)" : "CPU: sum of ps %CPU (moving average)"].join("\n");
 };

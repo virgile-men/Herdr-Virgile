@@ -8,8 +8,8 @@
 // - Règles : reflect-mod vérifie chaque nouveau message envoyé à Claude Code. Quand un agent Claude se
 //   remet au travail, le store du plugin de sa machine est relu 20 s puis 60 s plus tard (un `exec`,
 //   rien d'autre entre-temps). Une règle nouvelle en attente : une notification et un toast Herdr.
-// - Le libellé du bouton de l'en-tête : « Alertes · N » (commandes retenues + règles en attente), sinon
-//   « Alertes • » s'il y a des notifications pas encore vues.
+// - Le libellé du bouton de l'en-tête : « Alerts · N » (commandes retenues + règles en attente), sinon
+//   « Alerts • » s'il y a des notifications pas encore vues.
 import { terminals, exec, notify, window as fenetreApp } from "herdr";
 import { journaliser, noterAttente, aSignaler, nonVues, reglesEnAttente } from "./notifs.js";
 import { suivi, nomDe, nombre as nbBlast } from "./veille-blast.js";
@@ -30,7 +30,7 @@ const machineDe = (addr) => (addr.includes("/") ? addr.split("/")[0] : "");
 
 export function libelleAlertes() {
   const n = nbBlast() + reglesEnAttente();
-  return n ? `Alertes · ${n}` : nonVues() ? "Alertes •" : "Alertes";
+  return n ? `Alerts · ${n}` : nonVues() ? "Alerts •" : "Alerts";
 }
 
 function prevoir(machine, quand, addr) {
@@ -59,9 +59,9 @@ export function veillerNotifs(cx) {
     // L'agent que vous regardez (son terminal ou son volet de chat, fenêtre active) : rien à signaler.
     const regarde = suivi() === addr && fenetreApp()?.active;
     if (regarde) { /* rien */ } else if (s === "blocked") {
-      journaliser({ type: "attend", titre: `${nomDe(addr)} attend votre réponse`, corps: msg, addr });
+      journaliser({ type: "attend", nom: nomDe(addr), corps: msg, addr });
     } else if (s === "done") {
-      journaliser({ type: "fini", titre: `${nomDe(addr)} a terminé`, corps: msg, addr });
+      journaliser({ type: "fini", nom: nomDe(addr), corps: msg, addr });
     }
     if (s === "working" && estClaude(k)) { prevoir(machineDe(addr), m + 20000, addr); prevoir(machineDe(addr), m + 60000, addr); }
   }
@@ -87,8 +87,8 @@ function lireStores(cx, m) {
         noterAttente(machine || null, enAttente);
         const nouvelles = aSignaler(machine || null, enAttente);
         for (const n of nouvelles) {
-          journaliser({ type: "regle", titre: `Règle proposée · ${nomDe(p.addr)}`, corps: n.rule, addr: p.addr });
-          notify({ title: "reflect-mod propose une règle", body: n.rule, level: "info", timeout: 10000,
+          journaliser({ type: "regle", nom: nomDe(p.addr), corps: n.rule, addr: p.addr });
+          notify({ title: "reflect-mod suggests a rule", body: n.rule, level: "info", timeout: 10000,
             action: { name: "agent.focus", args: { terminal: p.addr } } });
         }
       }

@@ -121,9 +121,9 @@ export function veiller(cx) {
         marquer(addr, r);
         if (r && !avant) {
           playSound("blocked");
-          journaliser({ type: "blast", titre: `${nomDe(addr)} : commande retenue`, corps: `${r.commande || r.label}${r.effet ? ` → ${r.effet}` : ""}`, addr });
+          journaliser({ type: "blast", nom: nomDe(addr), corps: `${r.commande || r.label}${r.effet ? ` → ${r.effet}` : ""}`, addr });
           notify({
-            title: "Blast Radius retient une commande",
+            title: "Blast Radius is holding a command",
             body: `${nomDe(addr)} · ${r.commande || r.label}${r.effet ? ` → ${r.effet}` : ""}`,
             level: "warning", timeout: 20000,
             action: { name: "agent.focus", args: { terminal: addr } },

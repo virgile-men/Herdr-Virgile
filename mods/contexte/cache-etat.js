@@ -113,18 +113,18 @@ export class EtatCache {
       etat, ttl, ecoule, deadline, arme, garde, toujours, compacteApres,
       ctx: this.ctx,
       modele: d?.modele ?? null,
-      ttlMot: d?.ttl === "5m" ? "5 min" : "1 h",
+      ttlMot: d?.ttl === "5m" ? "5m" : "1h",
       froidUsd: k ? this.ctx * pEcrit / 1e6 : null,
       chaudUsd: k ? this.ctx * pLu / 1e6 : null,
       pings: k && pLu > 0 ? Math.floor(pEcrit / pLu) : null,
       paye: this.manques.reduce((s, m) => s + (m.usd ?? 0), 0),
       alerte: etat === "froid" && this.ctx >= GROS && this.plugin === true,
       couleur: { chaud: VERT, garde: VERT, froid: ORANGE, inconnu: null }[etat],
-      mot: { chaud: "Chaud", garde: "Chaud (keepwarm)", froid: "Froid", inconnu: "Inconnu" }[etat],
-      sousEtat: etat === "chaud" ? `froid dans ${dureeCourte(ttl - ecoule)}`
-        : etat === "garde" ? `dernier envoi il y a ${dureeCourte(ecoule)} ; les pings de keepwarm le gardent au chaud`
-        : etat === "froid" ? `froid depuis ${dureeCourte(ecoule - ttl)}`
-        : compacteApres ? "compacté : en attente du premier tour" : "aucun envoi lu dans cette session",
+      mot: { chaud: "Warm", garde: "Warm (keepwarm)", froid: "Cold", inconnu: "Unknown" }[etat],
+      sousEtat: etat === "chaud" ? `cold in ${dureeCourte(ttl - ecoule)}`
+        : etat === "garde" ? `last send ${dureeCourte(ecoule)} ago; keepwarm pings keep it warm`
+        : etat === "froid" ? `cold for ${dureeCourte(ecoule - ttl)}`
+        : compacteApres ? "compacted: waiting for the first turn" : "nothing sent in this session yet",
     };
   }
 }

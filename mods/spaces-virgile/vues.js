@@ -2,10 +2,10 @@
 // cette même mod en overlay, avec props { view, ... } (main.js choisit la classe d'après view).
 //   menu      { of: "space" | "tab" | "group" | "header", id }   le clic droit
 //   machines  { group? }                                 le + : sur quelle machine ouvrir un space
-//   move      { space }                                  Déplacer vers un groupe
+//   move      { space }                                  Move to a group
 //   movetab   { tab }                                    Déplacer un onglet vers un autre space (même machine)
 //   labels    { tab? }                                   les étiquettes (d'un terminal/onglet, ou toutes)
-//   group     { id? | parent? | withSpace? | withSpaces?, name? }  Nouveau groupe / Modifier le groupe
+//   group     { id? | parent? | withSpace? | withSpaces?, name? }  New group / Edit group
 //             (withSpaces : [cible, lâché], deux spaces de machines différentes glissés l'un sur l'autre)
 //   look      { space }                                  l'icône et la couleur de l'avatar d'un space
 
@@ -68,7 +68,7 @@ function colorPicker(t, id, color, hexState, hexFocused, onPick) {
     .child(h_flex().gap(8).items_center()
       .child(div().size(24).rounded(6).flex_none().bg(color ?? t.dim).border_1().border_color(t.border))
       .child(field(t, hexState, hexFocused, Boolean(hexState.value().trim()) && !valid).w(120))
-      .child(div().text_size(11.5).text_color(t.dim).child("Couleur libre : #rrggbb")));
+      .child(div().text_size(11.5).text_color(t.dim).child("Custom color: #rrggbb")));
 }
 
 // La grille des icônes ; `initial` : une première case pour l'initiale (null).
@@ -80,7 +80,7 @@ function iconGrid(t, id, selected, color, onPick, initial = null) {
   return v_flex().flex_none().gap(2).children(rows.map((line) => h_flex().gap(2).children(line.map((name) => {
     const on = name === selected;
     return div().id(`${id}-${name ?? "initiale"}`).size(34).flex_none().rounded(7).flex().items_center().justify_center().cursor_pointer()
-      .tooltip(name ?? "Initiale")
+      .tooltip(name ?? "Initial")
       .when(on, (el) => el.bg(t.selected).border_1().border_color(color))
       .when(!on, (el) => el.hover((s) => s.bg(t.hover)))
       .on_click((_e, cx) => { onPick(name); cx.notify(); })
@@ -124,7 +124,8 @@ class ListPopup {
     const t = theme();
     const list = this.items();
     const usable = list.map((it, i) => (it.disabled || it.title ? -1 : i)).filter((i) => i !== -1);
-    return v_flex().id("sv-list").track_focus(this.handle).w_full().min_h(0).p(5).bg(t.popover).text_size(12.8)
+    // Herdr dessine le cadre du popup (bordure arrondie de 6 px) sans couper ce qu'il contient : le fond est arrondi à 5 px.
+    return v_flex().id("sv-list").track_focus(this.handle).w_full().min_h(0).p(5).rounded(5).bg(t.popover).text_size(12.8)
       .on_key_down((e, cx) => {
         const k = usable.indexOf(this.at);
         if (e.key === "down") this.at = usable[(k + 1) % usable.length] ?? -1;
@@ -158,58 +159,58 @@ export class MenuView extends ListPopup {
     const id = this.p.id;
     if (this.p.of === "group") {
       const g = d.groups[id];
-      if (!g) return [{ title: "Ce groupe n'existe plus" }];
+      if (!g) return [{ title: "This group no longer exists" }];
       const deep = A.depthOf(d, id) >= A.MAX_DEPTH;
       return [
-        { label: "Nouveau space ici…", icon: chrome("plus"), act: () => openView("machines", { group: id }) },
-        { label: "Nouveau sous-groupe…", icon: chrome("folder-plus"), disabled: deep, hint: deep ? "8 niveaux" : "", act: () => openView("group", { parent: id }) },
-        { label: "Modifier le groupe…", icon: chrome("square-pen"), act: () => openView("group", { id }) },
-        { label: g.folded ? "Déplier" : "Replier", icon: chrome(g.folded ? "chevron-down" : "chevron-right"), act: () => save(A.setFolded(d, id, !g.folded)) },
-        ...(!g.parent && d.after[id] ? [{ label: "Mettre en haut de la liste", icon: chrome("pin"),
+        { label: "New space here…", icon: chrome("plus"), act: () => openView("machines", { group: id }) },
+        { label: "New subgroup…", icon: chrome("folder-plus"), disabled: deep, hint: deep ? "8 levels max" : "", act: () => openView("group", { parent: id }) },
+        { label: "Edit group…", icon: chrome("square-pen"), act: () => openView("group", { id }) },
+        { label: g.folded ? "Expand" : "Collapse", icon: chrome(g.folded ? "chevron-down" : "chevron-right"), act: () => save(A.setFolded(d, id, !g.folded)) },
+        ...(!g.parent && d.after[id] ? [{ label: "Move to the top", icon: chrome("pin"),
           act: () => { let x = A.placeAfter(data(), id, []); const first = x.children.root[0]; if (first && first !== A.ref("g", id)) x = A.moveGroup(x, id, { into: null, before: first }); save(x); } }] : []),
-        ...(g.parent ? [{ label: "Remonter d'un niveau", icon: chrome("chevron-left"), act: () => save(A.moveGroup(d, id, { into: d.groups[g.parent]?.parent ?? null, after: A.ref("g", g.parent) })) }] : []),
-        { label: "Dégrouper", icon: chrome("x"), sep: true, danger: true, act: () => save(A.removeGroup(d, id)) },
+        ...(g.parent ? [{ label: "Move up a level", icon: chrome("chevron-left"), act: () => save(A.moveGroup(d, id, { into: d.groups[g.parent]?.parent ?? null, after: A.ref("g", g.parent) })) }] : []),
+        { label: "Ungroup", icon: chrome("x"), sep: true, danger: true, act: () => save(A.removeGroup(d, id)) },
       ];
     }
     if (this.p.of === "tab") {
       const s = spaces().find((x) => (x.tabs ?? []).some((c) => c.id === id));
-      if (!s) return [{ title: "Ce terminal n'existe plus" }];
+      if (!s) return [{ title: "This terminal no longer exists" }];
       return [
-        { label: "Étiquettes…", icon: icon("tag"), act: () => openView("labels", { tab: id }) },
-        { label: "Renommer", icon: chrome("square-pen"), act: () => run("tab.rename", { id }) },
-        { label: "Déplacer vers un space…", icon: icon("folder-open"), disabled: !targetsFor(id).length,
-          hint: targetsFor(id).length ? "" : "aucun autre space ici", act: () => openView("movetab", { tab: id }) },
-        { label: "Nouvel onglet dans ce space", icon: chrome("plus"), act: () => run("tab.new", { space: s.id }) },
-        { label: "Fermer", icon: chrome("x"), sep: true, act: () => run("tab.close", { id }) },
+        { label: "Labels…", icon: icon("tag"), act: () => openView("labels", { tab: id }) },
+        { label: "Rename", icon: chrome("square-pen"), act: () => run("tab.rename", { id }) },
+        { label: "Move to a space…", icon: icon("folder-open"), disabled: !targetsFor(id).length,
+          hint: targetsFor(id).length ? "" : "no other space here", act: () => openView("movetab", { tab: id }) },
+        { label: "New tab in this space", icon: chrome("plus"), act: () => run("tab.new", { space: s.id }) },
+        { label: "Close", icon: chrome("x"), sep: true, act: () => run("tab.close", { id }) },
       ];
     }
     if (this.p.of === "header") {
       const all = Object.values(d.groups);
       const by = Boolean(shared(OPTIONS)?.byMachine);
       return [
-        { label: "Trier par machine", icon: chrome("server"), hint: by ? "\u2713" : "",
+        { label: "Sort by machine", icon: chrome("server"), hint: by ? "\u2713" : "",
           act: () => setShared(OPTIONS, { ...(shared(OPTIONS) ?? {}), byMachine: !by }) },
-        { label: "Nouveau groupe…", icon: chrome("folder-plus"), sep: true, act: () => openView("group", {}) },
-        { label: "Gérer les étiquettes…", icon: icon("tag"), act: () => openView("labels", {}) },
+        { label: "New group…", icon: chrome("folder-plus"), sep: true, act: () => openView("group", {}) },
+        { label: "Manage labels…", icon: icon("tag"), act: () => openView("labels", {}) },
         ...(all.length ? [
-          { label: "Tout replier", icon: chrome("chevron-right"), sep: true, act: () => { const x = data(); for (const g of Object.values(x.groups)) g.folded = true; save(x); } },
-          { label: "Tout déplier", icon: chrome("chevron-down"), act: () => { const x = data(); for (const g of Object.values(x.groups)) g.folded = false; save(x); } },
+          { label: "Collapse all", icon: chrome("chevron-right"), sep: true, act: () => { const x = data(); for (const g of Object.values(x.groups)) g.folded = true; save(x); } },
+          { label: "Expand all", icon: chrome("chevron-down"), act: () => { const x = data(); for (const g of Object.values(x.groups)) g.folded = false; save(x); } },
         ] : []),
       ];
     }
     const grouped = A.groupOfSpace(d, id);
     return [
-      { label: "Icône et couleur…", icon: icon("palette"), act: () => openView("look", { space: id }) },
-      { label: "Déplacer vers un groupe…", icon: icon("folder-open"), act: () => openView("move", { space: id }) },
-      { label: "Nouveau groupe avec ce space…", icon: chrome("folder-plus"), act: () => openView("group", { withSpace: id }) },
-      ...(grouped ? [{ label: "Retirer du groupe", icon: chrome("minus"), act: () => save(A.moveSpace(d, id, { into: null })) }] : []),
-      { label: "Renommer", icon: chrome("square-pen"), sep: true, act: () => run("space.rename", { id }) },
+      { label: "Icon and color…", icon: icon("palette"), act: () => openView("look", { space: id }) },
+      { label: "Move to a group…", icon: icon("folder-open"), act: () => openView("move", { space: id }) },
+      { label: "New group with this space…", icon: chrome("folder-plus"), act: () => openView("group", { withSpace: id }) },
+      ...(grouped ? [{ label: "Remove from group", icon: chrome("minus"), act: () => save(A.moveSpace(d, id, { into: null })) }] : []),
+      { label: "Rename", icon: chrome("square-pen"), sep: true, act: () => run("space.rename", { id }) },
       ...(this.git ? [
-        { label: "Nouveau worktree", icon: chrome("git-branch"), act: () => worktree({ space: id, action: "new" }) },
-        { label: "Ouvrir un worktree", icon: chrome("git-branch"), act: () => worktree({ space: id, action: "open" }) },
+        { label: "New worktree", icon: chrome("git-branch"), act: () => worktree({ space: id, action: "new" }) },
+        { label: "Open worktree", icon: chrome("git-branch"), act: () => worktree({ space: id, action: "open" }) },
       ] : []),
-      ...(this.git === "linked" ? [{ label: "Retirer le worktree", icon: chrome("git-branch"), act: () => worktree({ space: id, action: "remove" }) }] : []),
-      { label: "Fermer", icon: chrome("x"), sep: true, act: () => run("space.close", { id }) },
+      ...(this.git === "linked" ? [{ label: "Remove worktree", icon: chrome("git-branch"), act: () => worktree({ space: id, action: "remove" }) }] : []),
+      { label: "Close", icon: chrome("x"), sep: true, act: () => run("space.close", { id }) },
     ];
   }
 }
@@ -223,13 +224,13 @@ export class MachinesView extends ListPopup {
   items() {
     const d = data();
     const g = this.p.group && d.groups[this.p.group];
-    const out = [{ title: g ? `Nouveau space dans « ${g.name} », sur…` : "Nouveau space sur…" }];
+    const out = [{ title: g ? `New space in "${g.name}", on…` : "New space on…" }];
     for (const m of machineList()) {
       const down = m.layout === "unavailable";
-      out.push({ label: m.name ?? "Cet ordinateur", icon: chrome(m.name ? "server" : "monitor"), disabled: down,
-        hint: down ? "injoignable" : m.layout === "loading" ? "connexion…" : "", act: () => this.start(m.name) });
+      out.push({ label: m.name ?? "This computer", icon: chrome(m.name ? "server" : "monitor"), disabled: down,
+        hint: down ? "unreachable" : m.layout === "loading" ? "connecting…" : "", act: () => this.start(m.name) });
     }
-    if (!g) out.push({ label: "Nouveau groupe…", icon: chrome("folder-plus"), sep: true, act: () => openView("group", {}) });
+    if (!g) out.push({ label: "New group…", icon: chrome("folder-plus"), sep: true, act: () => openView("group", {}) });
     return out;
   }
 }
@@ -239,8 +240,8 @@ export class MoveView extends ListPopup {
     const d = data();
     const sid = this.p.space;
     const now = A.groupOfSpace(d, sid);
-    const out = [{ title: "Déplacer vers…" },
-      { label: "Aucun groupe (sous sa machine)", icon: now ? chrome("minus") : chrome("check"), act: () => save(A.moveSpace(data(), sid, { into: null })) }];
+    const out = [{ title: "Move to…" },
+      { label: "No group (under its machine)", icon: now ? chrome("minus") : chrome("check"), act: () => save(A.moveSpace(data(), sid, { into: null })) }];
     const walk = (gid, depth) => {
       const g = d.groups[gid];
       if (!g) return;
@@ -249,7 +250,7 @@ export class MoveView extends ListPopup {
       for (const r of d.children[gid] ?? []) { const k = A.unref(r); if (k.kind === "g") walk(k.id, depth + 1); }
     };
     for (const r of d.children.root) walk(A.unref(r).id, 0);
-    out.push({ label: "Nouveau groupe…", icon: chrome("folder-plus"), sep: true, act: () => openView("group", { withSpace: sid }) });
+    out.push({ label: "New group…", icon: chrome("folder-plus"), sep: true, act: () => openView("group", { withSpace: sid }) });
     return out;
   }
 }
@@ -261,8 +262,8 @@ export class MoveTabView extends ListPopup {
     const d = data();
     const tab = this.p.tab;
     const list = targetsFor(tab);
-    const out = [{ title: "Déplacer l'onglet vers…" }];
-    if (!list.length) out.push({ label: "Aucun autre space sur cette machine", icon: chrome("minus"), disabled: true });
+    const out = [{ title: "Move tab to…" }];
+    if (!list.length) out.push({ label: "No other space on this machine", icon: chrome("minus"), disabled: true });
     for (const s of list) {
       const g = A.groupOfSpace(d, s.id);
       out.push({ label: s.name, icon: chrome(s.machine ? "server" : "monitor"), swatch: avatarColor(theme(), s, d),
@@ -281,7 +282,7 @@ export class LabelsView {
     this.confirm = null; // lid dont la suppression attend un second clic
     this.color = A.PALETTE[(data().labelOrder.length * 5) % A.PALETTE.length];
     this.error = "";
-    this.name = InputState.new({ placeholder: "Nom de l'étiquette" });
+    this.name = InputState.new({ placeholder: "Label name" });
     this.hexIn = InputState.new({ placeholder: "#3e63dd", value: this.color });
     this.name.on("submit", (_e, cx) => { this.submit(); cx.notify(); });
     this.name.on("change", (_e, cx) => { if (this.error) { this.error = ""; cx.notify(); } });
@@ -318,11 +319,11 @@ export class LabelsView {
 
   submit() {
     const name = this.name.value().trim();
-    if (!name) { this.error = "Il faut un nom."; return; }
+    if (!name) { this.error = "A name is required."; return; }
     const color = A.hex(this.hexIn.value()) ?? this.color;
     let d = data();
     const taken = d.labelOrder.find((l) => l !== this.editing && d.labels[l].name.toLowerCase() === name.toLowerCase());
-    if (taken) { this.error = "Une étiquette porte déjà ce nom."; return; }
+    if (taken) { this.error = "A label with this name already exists."; return; }
     if (this.editing) d = A.editLabel(d, this.editing, { name, color });
     else {
       let lid;
@@ -355,33 +356,33 @@ export class LabelsView {
             .flex().items_center().justify_center().when(on, (b) => b.child(svg(chrome("check")).size(11).text_color("#ffffff")))))
         .child(div().size(9).rounded(5).flex_none().bg(l.color))
         .child(div().flex_1().min_w(0).truncate().text_color(t.foreground).child(l.name))
-        .child(div().flex_none().text_size(11).text_color(t.dim).child(used ? `${used} terminal${used > 1 ? "aux" : ""}`.replace("terminalaux", "terminaux") : ""))
+        .child(div().flex_none().text_size(11).text_color(t.dim).child(used ? `${used} terminal${used > 1 ? "s" : ""}` : ""))
         .child(div().id(`lb-ed-${i}`).size(22).flex_none().rounded(5).flex().items_center().justify_center().cursor_pointer()
-          .tooltip("Modifier").hover((s) => s.bg(t.raised))
+          .tooltip("Edit").hover((s) => s.bg(t.raised))
           .on_click((_e, cx) => { cx.stop_propagation(); this.edit(lid); cx.notify(); })
           .child(svg(chrome("square-pen")).size(13).text_color(t.muted)))
         .child(div().id(`lb-rm-${i}`).h(22).flex_none().rounded(5).when(this.confirm === lid, (el) => el.px(6)).when(this.confirm !== lid, (el) => el.w(22))
           .flex().items_center().justify_center().cursor_pointer()
-          .tooltip(this.confirm === lid ? "Cliquer encore pour supprimer partout" : "Supprimer").hover((s) => s.bg(t.raised))
+          .tooltip(this.confirm === lid ? "Click again to delete everywhere" : "Delete").hover((s) => s.bg(t.raised))
           .on_click((_e, cx) => {
             cx.stop_propagation();
             if (this.confirm === lid) { save(A.removeLabel(data(), lid)); this.confirm = null; if (this.editing === lid) this.reset(); }
             else this.confirm = lid;
             cx.notify();
           })
-          .child(this.confirm === lid ? div().text_size(11).text_color(t.blocked).child("Supprimer ?") : svg(chrome("x")).size(13).text_color(t.muted)));
+          .child(this.confirm === lid ? div().text_size(11).text_color(t.blocked).child("Delete?") : svg(chrome("x")).size(13).text_color(t.muted)));
     });
-    return v_flex().id("sv-labels").track_focus(this.handle).size_full().min_h(0).p(18).bg(t.popover).text_size(12.8).text_color(t.foreground)
+    return v_flex().id("sv-labels").track_focus(this.handle).size_full().min_h(0).p(18).rounded(5).bg(t.popover).text_size(12.8).text_color(t.foreground)
       .on_key_down((e, cx) => { if (e.key === "escape") { close(); cx.stop_propagation(); } })
       .child(h_flex().flex_none().items_center()
-        .child(div().flex_1().text_size(15).font_semibold().child("Étiquettes"))
+        .child(div().flex_1().text_size(15).font_semibold().child("Labels"))
         .child(div().text_size(11).text_color(t.dim).child("Esc")))
       .child(div().flex_none().pt(2).pb(12).text_size(11.5).text_color(t.dim).truncate()
-        .child(tab ? `Cochez celles de « ${tabTitle(tab)} ».` : "Les étiquettes servent à tous les terminaux."))
+        .child(tab ? `Check the ones for "${tabTitle(tab)}".` : "Labels are shared by all terminals."))
       .child(v_flex().id("lb-list").flex_1().min_h(0).overflow_y_scrollbar().gap(1)
-        .children(rows.length ? rows : [div().py(10).text_size(12).text_color(t.dim).child("Aucune étiquette pour l'instant : créez-en une ci-dessous.")]))
+        .children(rows.length ? rows : [div().py(10).text_size(12).text_color(t.dim).child("No labels yet: create one below.")]))
       .child(div().flex_none().my(12).h(1).bg(t.border))
-      .child(label(t, this.editing ? `Modifier « ${d.labels[this.editing]?.name ?? ""} »` : "Nouvelle étiquette"))
+      .child(label(t, this.editing ? `Edit "${d.labels[this.editing]?.name ?? ""}"` : "New label"))
       .child(h_flex().flex_none().gap(8).items_center()
         .child(div().size(12).rounded(6).flex_none().bg(this.color))
         .child(field(t, this.name, this.nameFocused, Boolean(this.error)).flex_1()))
@@ -389,13 +390,13 @@ export class LabelsView {
       .child(colorPicker(t, "lb", this.color, this.hexIn, this.hexFocused, (c) => this.pick(c)))
       .child(h_flex().flex_none().pt(16).gap(8).items_center()
         .child(div().flex_1().text_size(11.5).text_color(t.blocked).child(this.error))
-        .when(Boolean(this.editing), (el) => el.child(button(t, "lb-cancel", "Annuler", false, (_e, cx) => { this.reset(); cx.notify(); })))
-        .child(button(t, "lb-save", this.editing ? "Enregistrer" : sid ? "Créer et cocher" : "Créer", false, (_e, cx) => { this.submit(); cx.notify(); }))
-        .child(button(t, "lb-close", "Fermer", true, close)));
+        .when(Boolean(this.editing), (el) => el.child(button(t, "lb-cancel", "Cancel", false, (_e, cx) => { this.reset(); cx.notify(); })))
+        .child(button(t, "lb-save", this.editing ? "Save" : sid ? "Create and check" : "Create", false, (_e, cx) => { this.submit(); cx.notify(); }))
+        .child(button(t, "lb-close", "Close", true, close)));
   }
 }
 
-// Nouveau groupe / Modifier le groupe : nom, icône, et couleur pour un groupe racine
+// New group / Edit group : nom, icône, et couleur pour un groupe racine
 // (un sous-groupe prend celle de son groupe racine).
 export class GroupView {
   init(cx) {
@@ -410,7 +411,7 @@ export class GroupView {
     // Les spaces qui entrent dans le nouveau groupe : un (withSpace) ou deux (withSpaces, un glisser).
     this.withs = this.p.withSpaces ?? (this.p.withSpace ? [this.p.withSpace] : []);
     const value = g?.name ?? this.p.name ?? "";
-    this.name = InputState.new({ placeholder: "Nom du groupe", value });
+    this.name = InputState.new({ placeholder: "Group name", value });
     this.hexIn = InputState.new({ placeholder: "#3e63dd", value: this.color });
     this.name.on("submit", (_e, cx) => { this.save(); cx.notify(); });
     this.name.on("change", (_e, cx) => { if (this.error) { this.error = ""; cx.notify(); } });
@@ -429,7 +430,7 @@ export class GroupView {
 
   save() {
     const name = this.name.value().trim();
-    if (!name) { this.error = "Il faut un nom."; return; }
+    if (!name) { this.error = "A name is required."; return; }
     const color = A.hex(this.hexIn.value()) ?? this.color;
     let d = data();
     if (this.g) {
@@ -442,7 +443,7 @@ export class GroupView {
       const after = first && parent ? A.ref("s", first) : null;
       let gid;
       [d, gid] = A.addGroup(d, { name, icon: this.icon, color, parent, after });
-      if (!gid) { this.error = "Pas plus de 8 niveaux."; return; }
+      if (!gid) { this.error = "No more than 8 levels."; return; }
       if (parent) d = A.setFolded(d, parent, false);
       for (const sid of this.withs) d = A.moveSpace(d, sid, { into: gid });
     }
@@ -458,34 +459,34 @@ export class GroupView {
     const inherited = parent ? A.colorOf(d, parent) : null;
     const pair = this.withs.length > 1 ? this.withs.map((sid) => spaces().find((s) => s.id === sid)).filter(Boolean) : [];
     const shown = inherited ?? this.color;
-    return v_flex().id("sv-group").track_focus(this.handle).size_full().min_h(0).p(18).bg(t.popover).text_size(12.8).text_color(t.foreground)
+    return v_flex().id("sv-group").track_focus(this.handle).size_full().min_h(0).p(18).rounded(5).bg(t.popover).text_size(12.8).text_color(t.foreground)
       .on_key_down((e, cx) => { if (e.key === "escape") { close(); cx.stop_propagation(); } })
       .child(h_flex().flex_none().items_center()
-        .child(div().flex_1().text_size(15).font_semibold().child(this.g ? "Modifier le groupe" : pair.length ? "Grouper ces deux spaces" : parent ? "Nouveau sous-groupe" : "Nouveau groupe"))
+        .child(div().flex_1().text_size(15).font_semibold().child(this.g ? "Edit group" : pair.length ? "Group these two spaces" : parent ? "New subgroup" : "New group"))
         .child(div().text_size(11).text_color(t.dim).child("Esc")))
       .when(pair.length > 0, (el) => el.child(div().flex_none().pt(6).text_size(12).text_color(t.muted)
-        .child(`${pair.map((s) => `« ${s.name} » (${s.machine ?? "cet ordinateur"})`).join(" et ")}. Un space reste sur sa machine : le groupe les montre ensemble.`)))
+        .child(`${pair.map((s) => `"${s.name}" (${s.machine ?? "this computer"})`).join(" and ")}. Each space stays on its machine: the group shows them together.`)))
       .child(div().flex_none().h(14))
-      .child(label(t, "Nom"))
+      .child(label(t, "Name"))
       .child(h_flex().flex_none().gap(8).items_center()
         .child(h_flex().size(34).flex_none().rounded(8).border_1().border_color(t.input).bg(t.background).items_center().justify_center()
           .child(svg(icon(this.icon)).size(17).text_color(shown)))
         .child(field(t, this.name, this.nameFocused, Boolean(this.error)).flex_1()))
       .child(div().flex_none().h(14))
-      .child(label(t, "Icône"))
+      .child(label(t, "Icon"))
       .child(iconGrid(t, "ic", this.icon, shown, (name) => { this.icon = name; }))
       .child(div().flex_none().h(14))
-      .child(label(t, "Couleur"))
+      .child(label(t, "Color"))
       .child(inherited
         ? h_flex().flex_none().gap(8).items_center()
           .child(div().size(24).rounded(12).flex_none().bg(inherited))
-          .child(div().text_size(12).text_color(t.dim).child(`Héritée de « ${d.groups[A.rootOf(d, parent)]?.name ?? ""} » (les sous-groupes prennent la couleur de leur groupe racine).`))
+          .child(div().text_size(12).text_color(t.dim).child(`Inherited from "${d.groups[A.rootOf(d, parent)]?.name ?? ""}" (subgroups take the color of their root group).`))
         : colorPicker(t, "gr", this.color, this.hexIn, this.hexFocused, (c) => { this.color = c; this.hexIn.set_value(c); }))
       .child(div().flex_1())
       .child(h_flex().flex_none().pt(16).gap(8).items_center()
         .child(div().flex_1().text_size(11.5).text_color(t.blocked).child(this.error))
-        .child(button(t, "gr-cancel", "Annuler", false, close))
-        .child(button(t, "gr-save", this.g ? "Enregistrer" : "Créer", true, (_e, cx) => { this.save(); cx.notify(); })));
+        .child(button(t, "gr-cancel", "Cancel", false, close))
+        .child(button(t, "gr-save", this.g ? "Save" : "Create", true, (_e, cx) => { this.save(); cx.notify(); })));
   }
 }
 
@@ -532,28 +533,28 @@ export class LookView {
     const d = data();
     const close = () => closeOverlay(this.p.overlay);
     const w = spaces().find((s) => s.id === this.p.space);
-    if (!w) return v_flex().size_full().p(18).bg(t.popover).text_color(t.dim).child("Ce space n'existe plus.");
+    if (!w) return v_flex().size_full().p(18).rounded(5).bg(t.popover).text_color(t.dim).child("This space no longer exists.");
     const letter = [...w.name][0]?.toUpperCase() ?? "?";
-    return v_flex().id("sv-look").track_focus(this.handle).size_full().min_h(0).p(18).bg(t.popover).text_size(12.8).text_color(t.foreground)
+    return v_flex().id("sv-look").track_focus(this.handle).size_full().min_h(0).p(18).rounded(5).bg(t.popover).text_size(12.8).text_color(t.foreground)
       .on_key_down((e, cx) => { if (e.key === "escape") { close(); cx.stop_propagation(); } })
       .child(h_flex().flex_none().items_center()
-        .child(div().flex_1().text_size(15).font_semibold().child("Icône du space"))
+        .child(div().flex_1().text_size(15).font_semibold().child("Space icon"))
         .child(div().text_size(11).text_color(t.dim).child("Esc")))
       .child(h_flex().flex_none().pt(14).gap(10).items_center()
         .child(avatar(t, w, d, 34, { icon: this.icon, color: this.color }))
         .child(div().flex_1().min_w(0).truncate().text_size(13.5).child(w.name)))
       .child(div().flex_none().h(14))
-      .child(label(t, "Icône"))
+      .child(label(t, "Icon"))
       .child(iconGrid(t, "lk", this.icon, this.color, (name) => { this.icon = name; }, letter))
       .child(div().flex_none().h(14))
-      .child(label(t, "Couleur"))
+      .child(label(t, "Color"))
       .child(colorPicker(t, "lk", this.color, this.hexIn, this.hexFocused, (c) => { this.color = c; this.hexIn.set_value(c); }))
       .child(div().flex_1())
       .child(h_flex().flex_none().pt(16).gap(8).items_center()
-        .when(Boolean(d.looks[w.id]), (el) => el.child(button(t, "lk-reset", "Remettre celle de Herdr", false, () => this.reset())))
+        .when(Boolean(d.looks[w.id]), (el) => el.child(button(t, "lk-reset", "Reset to Herdr's default", false, () => this.reset())))
         .child(div().flex_1())
-        .child(button(t, "lk-cancel", "Annuler", false, close))
-        .child(button(t, "lk-save", "Enregistrer", true, (_e, cx) => { this.save(); cx.notify(); })));
+        .child(button(t, "lk-cancel", "Cancel", false, close))
+        .child(button(t, "lk-save", "Save", true, (_e, cx) => { this.save(); cx.notify(); })));
   }
 }
 

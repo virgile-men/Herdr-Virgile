@@ -123,7 +123,7 @@ export async function readSessions(list, known = {}) {
       const got = parse(r.stdout);
       for (const a of mine) {
         const s = got[String(a.pid)];
-        if (!s) out[a.address] = { error: (r.stderr || "pas de réponse").trim().slice(0, 160) };
+        if (!s) out[a.address] = { error: (r.stderr || "no response").trim().slice(0, 160) };
         else if (s.keep && known[a.address]) out[a.address] = known[a.address];
         else out[a.address] = { ...s, pid: a.pid };
       }
@@ -163,14 +163,14 @@ export const nomModele = (id) => {
   return `${m[1][0].toUpperCase()}${m[1].slice(1).toLowerCase()} ${m[2]}${m[3] ? "." + m[3] : ""}`;
 };
 
-export const tokens = (n) => (!isFinite(n) ? "—" : n >= 1e6 ? `${(n / 1e6).toFixed(1).replace(".", ",")}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(Math.round(n)));
-export const dollars = (usd) => (usd == null || !isFinite(usd) ? "—" : `$${usd < 10 ? usd.toFixed(2) : usd.toFixed(1)}`.replace(".", ","));
-// 42 min, 2 h 05, 3 j 4 h
+export const tokens = (n) => (!isFinite(n) ? "—" : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(Math.round(n)));
+export const dollars = (usd) => (usd == null || !isFinite(usd) ? "—" : `$${usd < 10 ? usd.toFixed(2) : usd.toFixed(1)}`);
+// <1m, 42m, 2h 05m, 3d 4h
 export const dureeCourte = (ms) => {
   const m = Math.max(0, Math.round(ms / 60000));
-  if (m < 1) return "< 1 min";
-  if (m < 60) return `${m} min`;
+  if (m < 1) return "<1m";
+  if (m < 60) return `${m}m`;
   const h = Math.floor(m / 60);
-  if (h >= 48) return `${Math.floor(h / 24)} j ${h % 24} h`;
-  return `${h} h ${String(m % 60).padStart(2, "0")}`;
+  if (h >= 48) return `${Math.floor(h / 24)}d ${h % 24}h`;
+  return `${h}h ${String(m % 60).padStart(2, "0")}m`;
 };

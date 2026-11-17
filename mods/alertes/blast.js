@@ -1,11 +1,11 @@
 // Section Blast Radius du panneau Alertes (l'ancien panneau Blast) : la commande risquée que le mod Claude
-// Blast Radius retient, ce qu'elle supprimerait ou écraserait, et Exécuter / Annuler. La retenue reste le
+// Blast Radius retient, ce qu'elle supprimerait ou écraserait, et Run / Cancel. La retenue reste le
 // travail du plugin, dans Claude Code ; les boutons appuient pour vous sur les touches de son panneau
 // (1 : Proceed, 2 : Cancel) avec `hc keys`, puis vérifient l'écran.
 //
 // Ce qui est montré : le résumé du plugin, lu sur l'écran du terminal (« Would … »), puis la liste
 // détaillée, remesurée ici avec le même code que le plugin (classer.js), lancé sur la machine de l'agent.
-// Repliés : « Mesurer une commande » (l'effet d'une commande avant de la demander à un agent) et les
+// Repliés : « Measure a command » (l'effet d'une commande avant de la demander à un agent) et les
 // réponses données ici. La veille (veille.js, lancée par l'en-tête) repère les retenues de tous les agents.
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
@@ -13,6 +13,11 @@ import { exec, hc, agents, terminals, shared, setShared, run, panes, settings } 
 import { cible, session, sh, machineDe } from "./claude.js";
 import { classify, resolveDir, measure, runSur } from "./classer.js";
 import { retenues, regarder, marquer } from "./veille.js";
+// Dates written by hand: the mod runtime ignores toLocale*'s locale and options ("11/16/2026, 02:56:15 AM").
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const p2 = (n) => String(n).padStart(2, "0");
+const hhmm = (d) => `${p2(d.getHours())}:${p2(d.getMinutes())}`;
+const dayMonth = (d) => `${d.getDate()} ${MONTHS[d.getMonth()]}`;
 
 const HISTO = "blast-radius.historique";
 export const JAUNE = "#d29922";
@@ -51,7 +56,7 @@ export class SectionBlast {
     this.occupe = false;
     this.saisie = null;
     this.ouvert = { mesurer: false, reponses: false };
-    this.champ = InputState.new({ placeholder: "ex. git reset --hard" });
+    this.champ = InputState.new({ placeholder: "e.g. git reset --hard" });
     this.champ.on("submit", (_e, cx) => this.mesurer(cx));
     this.champ.on("focus", (_e, cx) => { this.saisie = "essai"; cx.notify(); });
     this.champ.on("blur", (_e, cx) => { if (this.saisie === "essai") this.saisie = null; cx.notify(); });
@@ -91,7 +96,7 @@ export class SectionBlast {
           const exec = runSur(S.machine);
           const cwd = risque.dir ? await resolveDir(exec, S.cwd, risque.dir) : S.cwd;
           m.rapport = cwd === null
-            ? { summary: `${risque.label} dans ${risque.dir}`, lines: [], note: `Dossier ${risque.dir} introuvable : impossible de mesurer.` }
+            ? { summary: `${risque.label} in ${risque.dir}`, lines: [], note: `Folder ${risque.dir} not found: can't measure.` }
             : await measure(exec, risque, cwd);
           m.dossier = cwd;
         }
@@ -112,16 +117,16 @@ export class SectionBlast {
       try {
         // Encore là ? (on a pu répondre dans le terminal entre-temps)
         const avant = await regarder(addr);
-        if (!avant) { marquer(addr, null); this.note = "Déjà répondu : la commande n'est plus retenue."; return; }
+        if (!avant) { marquer(addr, null); this.note = "Already answered: the command is no longer held."; return; }
         const k = await hc(["keys", addr, choix === "proceed" ? "1" : "2"]);
-        if (k.code !== 0) throw new Error((k.stderr || "hc keys a échoué").trim().slice(0, 160));
+        if (k.code !== 0) throw new Error((k.stderr || "hc keys failed").trim().slice(0, 160));
         let encore = avant;
         for (let i = 0; i < 6 && encore; i += 1) { await exec("sleep", ["0.5"]).catch(() => null); encore = await regarder(addr); }
-        if (encore) { this.note = "Le panneau du plugin n'a pas réagi : répondez dans le terminal (1 ou 2)."; return; }
+        if (encore) { this.note = "The plugin's prompt didn't react: answer in the terminal (1 or 2)."; return; }
         marquer(addr, null);
         const h = [{ at: Date.now(), addr, commande: this.mesures[addr]?.commande ?? r.commande, effet: r.effet, choix }, ...((shared(HISTO) ?? []))].slice(0, 20);
         setShared(HISTO, h);
-        this.note = choix === "proceed" ? "Exécutée : le plugin a laissé passer la commande." : "Annulée : Claude a reçu le refus et la raison.";
+        this.note = choix === "proceed" ? "Ran: the plugin let the command through." : "Canceled: Claude got the refusal and the reason.";
       } catch (e) {
         this.note = String(e?.message ?? e).slice(0, 200);
       } finally {
@@ -141,16 +146,16 @@ export class SectionBlast {
       const e = { commande };
       try {
         const risque = classify(commande);
-        if (!risque) e.rapport = { summary: "rien : Blast Radius laisserait passer cette commande", lines: [], note: "Seuls rm -r/-f, git reset --hard, git checkout/restore ., git clean, git push --force et les migrations sont retenus." };
+        if (!risque) e.rapport = { summary: "nothing: Blast Radius would let this command through", lines: [], note: "Only rm -r/-f, git reset --hard, git checkout/restore ., git clean, git push --force and migrations are held." };
         else {
           let machine = machineDe(addr), base = null;
           if (addr) { const S = await session(addr); if (!S.erreur) { machine = S.machine; base = S.cwd; } }
           base = base || panes().find((p) => p.terminal === addr)?.cwd || null;
-          if (!base) throw new Error("Pas de dossier où mesurer : sélectionnez un terminal.");
+          if (!base) throw new Error("No folder to measure in: select a terminal.");
           const exec = runSur(machine);
           const cwd = risque.dir ? await resolveDir(exec, base, risque.dir) : base;
           e.dossier = cwd ?? base;
-          e.rapport = cwd === null ? { summary: `${risque.label} dans ${risque.dir}`, lines: [], note: `Dossier ${risque.dir} introuvable.` } : await measure(exec, risque, cwd);
+          e.rapport = cwd === null ? { summary: `${risque.label} in ${risque.dir}`, lines: [], note: `Folder ${risque.dir} not found.` } : await measure(exec, risque, cwd);
           e.label = risque.label;
         }
       } catch (err) { e.erreur = String(err?.message ?? err).slice(0, 200); }
@@ -175,7 +180,7 @@ export class SectionBlast {
       .child(texte);
     const rapport = (rp, id) => v_flex().gap(3)
       .children((rp.lines ?? []).map((l, i) => div().id(`${id}-l${i}`).truncate().font_family(mono).text_size(11.5).text_color(t.muted).child(l)))
-      .when(Boolean(rp.more), (e) => e.child(div().text_size(11.5).text_color(t.dim).child(`+ ${rp.more} de plus`)))
+      .when(Boolean(rp.more), (e) => e.child(div().text_size(11.5).text_color(t.dim).child(`+ ${rp.more} more`)))
       .when(Boolean(rp.note), (e) => e.child(div().pt(4).text_size(11.5).text_color(t.dim).child(rp.note)));
     const repli = (cle, texte) => h_flex().id(`br-${cle}`).px(14).pt(8).pb(4).gap(6).items_center().cursor_pointer()
       .on_click((_e, cx) => { this.ouvert[cle] = !this.ouvert[cle]; cx.notify(); })
@@ -188,52 +193,52 @@ export class SectionBlast {
       const lui = addr === ici;
       return v_flex().id(`br-r-${addr}`).flex_none().mx(10).mb(8).p(12).gap(8).rounded(8).border_1().border_color(JAUNE)
         .child(h_flex().gap(8).items_center()
-          .child(div().text_color(JAUNE).font_semibold().child(`⚠ ${r.label || "commande risquée"}`))
+          .child(div().text_color(JAUNE).font_semibold().child(`⚠ ${r.label || "risky command"}`))
           .child(div().flex_1())
-          .child(div().text_size(11).text_color(t.dim).child(lui ? "cet agent" : (a?.tab_name || a?.space_name || terminals().find((x) => x.address === addr)?.labels?.where || addr))))
+          .child(div().text_size(11).text_color(t.dim).child(lui ? "this agent" : (a?.tab_name || a?.space_name || terminals().find((x) => x.address === addr)?.labels?.where || addr))))
         .child(div().id(`br-c-${addr}`).font_family(mono).text_size(12).p(8).rounded(6).bg(t.raised).child(m.commande ?? r.commande))
         .child(h_flex().gap(6).items_start()
-          .child(div().w(70).flex_none().text_size(12).text_color(t.muted).child("Effet"))
+          .child(div().w(70).flex_none().text_size(12).text_color(t.muted).child("Effect"))
           .child(div().flex_1().text_size(12.5).font_semibold().text_color(t.ansi1).child(r.effet || m.rapport?.summary || "…")))
         .when(Boolean(m.rapport), (e) => e.child(rapport(m.rapport, `br-d-${addr}`)))
-        .when(Boolean(m.erreur), (e) => e.child(div().text_size(11.5).text_color(t.dim).child(`Détail indisponible : ${m.erreur}`)))
-        .when(m.enCours === true, (e) => e.child(div().text_size(11.5).text_color(t.dim).child("Mesure…")))
+        .when(Boolean(m.erreur), (e) => e.child(div().text_size(11.5).text_color(t.dim).child(`Details unavailable: ${m.erreur}`)))
+        .when(m.enCours === true, (e) => e.child(div().text_size(11.5).text_color(t.dim).child("Measuring…")))
         .child(h_flex().gap(8).pt(4).items_center()
-          .child(bouton(`br-p-${addr}`, "Exécuter", (cx) => this.repondre(addr, "proceed", cx), "danger"))
-          .child(bouton(`br-x-${addr}`, "Annuler", (cx) => this.repondre(addr, "cancel", cx), "principal"))
+          .child(bouton(`br-p-${addr}`, "Run", (cx) => this.repondre(addr, "proceed", cx), "danger"))
+          .child(bouton(`br-x-${addr}`, "Cancel", (cx) => this.repondre(addr, "cancel", cx), "principal"))
           .child(div().flex_1())
-          .when(!lui, (e) => e.child(bouton(`br-g-${addr}`, "Voir l'agent", () => run("agent.focus", { terminal: addr }))))
-          .when(lui, (e) => e.child(div().text_size(11).text_color(t.dim).child("Claude attend votre réponse"))));
+          .when(!lui, (e) => e.child(bouton(`br-g-${addr}`, "Go to agent", () => run("agent.focus", { terminal: addr }))))
+          .when(lui, (e) => e.child(div().text_size(11).text_color(t.dim).child("Claude is waiting for you"))));
     };
 
     const histo = shared(HISTO) ?? [];
     const essai = this.essai;
     const out = liste.map(([addr, r]) => carte(addr, r));
-    if (!liste.length) out.push(div().mx(14).h(24).text_size(12).text_color(t.dim).child("Aucune commande retenue"));
+    if (!liste.length) out.push(div().mx(14).h(24).text_size(12).text_color(t.dim).child("No held commands"));
     if (this.note) out.push(div().mx(14).pb(4).text_size(11.5).text_color(t.dim).child(this.note));
 
-    out.push(repli("mesurer", "Mesurer une commande"));
+    out.push(repli("mesurer", "Measure a command"));
     if (this.ouvert.mesurer) {
       out.push(h_flex().flex_none().mx(14).gap(8)
         .child(div().id("br-essai").flex_1().min_w(0).h(30).px(10).flex().items_center().rounded(8).border_1()
           .border_color(this.saisie === "essai" ? t.accent : t.border).cursor_text().on_mouse_down("left", (_e, cx) => cx.stop_propagation())
           .child(Input.new(this.champ).h_full().font_family(mono).text_size(12).text_color(t.foreground)))
-        .child(bouton("br-mesurer", "Mesurer", (cx) => this.mesurer(cx))));
+        .child(bouton("br-mesurer", "Measure", (cx) => this.mesurer(cx))));
       if (essai) out.push(v_flex().flex_none().mx(14).mt(8).gap(6)
-        .when(essai.enCours === true, (x) => x.child(div().text_size(12).text_color(t.dim).child("Mesure…")))
+        .when(essai.enCours === true, (x) => x.child(div().text_size(12).text_color(t.dim).child("Measuring…")))
         .when(Boolean(essai.rapport), (x) => x
           .child(div().text_size(12.5).font_semibold().text_color(essai.label ? t.ansi1 : t.muted).child(essai.rapport.summary))
-          .when(Boolean(essai.dossier), (y) => y.child(div().text_size(11).text_color(t.dim).child(`dans ${essai.dossier}`)))
+          .when(Boolean(essai.dossier), (y) => y.child(div().text_size(11).text_color(t.dim).child(`in ${essai.dossier}`)))
           .child(rapport(essai.rapport, "br-essai")))
         .when(Boolean(essai.erreur), (x) => x.child(div().text_size(12).text_color(t.ansi1).child(essai.erreur))));
     }
     if (histo.length) {
-      out.push(repli("reponses", `Réponses données ici · ${histo.length}`));
+      out.push(repli("reponses", `Answered here · ${histo.length}`));
       if (this.ouvert.reponses) out.push(...histo.slice(0, 10).map((h, i) => h_flex().id(`br-h-${i}`).h(24).flex_none().mx(6).px(8).gap(8).items_center()
         .tooltip(`${h.commande}${h.effet ? `\n${h.effet}` : ""}`)
-        .child(div().w(66).flex_none().text_size(11).text_color(h.choix === "proceed" ? t.ansi1 : t.muted).child(h.choix === "proceed" ? "exécutée" : "annulée"))
+        .child(div().w(66).flex_none().text_size(11).text_color(h.choix === "proceed" ? t.ansi1 : t.muted).child(h.choix === "proceed" ? "ran" : "canceled"))
         .child(div().flex_1().min_w(0).truncate().font_family(mono).text_size(11.5).child(h.commande))
-        .child(div().text_size(11).text_color(t.dim).child(new Date(h.at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })))));
+        .child(div().text_size(11).text_color(t.dim).child(hhmm(new Date(h.at))))));
     }
     return out;
   }

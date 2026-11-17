@@ -65,11 +65,11 @@ export async function session(addr) {
   try { t = JSON.parse((await hc(["get", addr, "--json"])).stdout || "null"); } catch {}
   const fg = t?.foreground ?? {};
   const app = String(t?.status?.app ?? fg.name ?? "");
-  if (!fg.pid || !/claude/i.test(app + " " + (fg.argv ?? []).join(" "))) return { erreur: "Pas de session Claude Code dans ce terminal." };
+  if (!fg.pid || !/claude/i.test(app + " " + (fg.argv ?? []).join(" "))) return { erreur: "No Claude Code session in this terminal." };
   const machine = machineDe(addr);
   const s = await sh(SESSION, [String(fg.pid)], machine, 20000);
   const [id, cwd, file, size, version] = s.stdout.trim().split("\n").pop()?.split("\t") ?? [];
-  if (!id) return { erreur: "Session Claude Code introuvable (pas encore commencée ?)." };
+  if (!id) return { erreur: "Claude Code session not found (not started yet?)." };
   return { addr, machine, pid: fg.pid, id, cwd: cwd || fg.cwd || "", file: file || "", size: Number(size) || 0, version: version || "", argv: fg.argv ?? [], statut: t?.status ?? null };
 }
 
@@ -197,21 +197,22 @@ export const nomModele = (id) => {
 };
 
 // ---- Formats -------------------------------------------------------------------------------
-export const tokens = (n) => (!isFinite(n) ? "—" : n >= 1e6 ? `${(n / 1e6).toFixed(1).replace(".", ",")}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(Math.round(n)));
-export const dollars = (usd) => (usd == null || !isFinite(usd) ? "—" : `$${usd < 10 ? usd.toFixed(2) : usd.toFixed(1)}`.replace(".", ","));
-export const milliers = (n) => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, "\u202f");
-// 45 s, 3 min 27 s, 1 h 05
+export const tokens = (n) => (!isFinite(n) ? "—" : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(Math.round(n)));
+export const dollars = (usd) => (usd == null || !isFinite(usd) ? "—" : `$${usd < 10 ? usd.toFixed(2) : usd.toFixed(1)}`);
+export const milliers = (n) => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+// 45s, 3m 27s, 1h 05m
 export const duree = (ms) => {
   const s = Math.max(0, Math.floor(ms / 1000));
-  if (s < 60) return `${s} s`;
-  if (s < 3600) return `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, "0")} s`;
-  return `${Math.floor(s / 3600)} h ${String(Math.floor(s / 60) % 60).padStart(2, "0")}`;
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
+  return `${Math.floor(s / 3600)}h ${String(Math.floor(s / 60) % 60).padStart(2, "0")}m`;
 };
-// 42 min, 2 h 05, 3 j 4 h
+// <1m, 42m, 2h 05m, 3d 4h
 export const dureeCourte = (ms) => {
   const m = Math.max(0, Math.round(ms / 60000));
-  if (m < 60) return `${m} min`;
+  if (m < 1) return "<1m";
+  if (m < 60) return `${m}m`;
   const h = Math.floor(m / 60);
-  if (h >= 48) return `${Math.floor(h / 24)} j ${h % 24} h`;
-  return `${h} h ${String(m % 60).padStart(2, "0")}`;
+  if (h >= 48) return `${Math.floor(h / 24)}d ${h % 24}h`;
+  return `${h}h ${String(m % 60).padStart(2, "0")}m`;
 };

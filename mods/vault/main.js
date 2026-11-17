@@ -23,7 +23,7 @@ const NOMS =
 const CROCHET =
   `for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do ` +
   `if [ -f "$rc" ] || { [ "$rc" = "$HOME/.zshrc" ] && [ "$(basename "\${SHELL:-}")" = zsh ]; }; then ` +
-  `grep -q herdr-vault "$rc" 2>/dev/null || printf '\\n# herdr-vault : variables des terminaux Herdr (mod Vault)\\n` +
+  `grep -q herdr-vault "$rc" 2>/dev/null || printf '\\n# herdr-vault: environment variables for Herdr terminals (Vault mod)\\n` +
   `[ -n "$HC_TERMINAL_ID" ] && [ -r "$HOME/.config/herdr-vault/env" ] && . "$HOME/.config/herdr-vault/env"\\n' >> "$rc"; ` +
   `fi; done`;
 
@@ -38,7 +38,9 @@ const ecrire = (nom) =>
 const PATH_HC = 'PATH="$HOME/.local/bin:$PATH"; ';
 
 const citer = (v) => "'" + v.replace(/'/g, "'\\''") + "'";
-const libelle = (m) => (m === null ? "Ce serveur" : m);
+const libelle = (m) => (m === null ? "This computer" : m);
+// Au milieu d'une phrase : « on this computer ».
+const dans = (m) => (m === null ? "this computer" : m);
 
 export default class Vault extends View {
   init(_props, cx) {
@@ -47,8 +49,8 @@ export default class Vault extends View {
     this.message = "";
     this.erreur = false;
     this.occupe = false;
-    this.nom = InputState.new({ placeholder: "NOM_DE_VARIABLE" });
-    this.valeur = InputState.new({ placeholder: "valeur (masquée)" });
+    this.nom = InputState.new({ placeholder: "VARIABLE_NAME" });
+    this.valeur = InputState.new({ placeholder: "value (hidden)" });
     this.valeur.set_masked(true);
     this.nom.on("submit", () => this.valeur.focus());
     this.valeur.on("submit", (_e, cx) => this.enregistrer(cx));
@@ -85,10 +87,10 @@ export default class Vault extends View {
       try {
         const r = await this.lancer(NOMS);
         this.noms = r.code === 0 ? r.stdout.split("\n").filter(Boolean).sort() : [];
-        if (r.code !== 0) this.dire(`Lecture impossible sur ${libelle(this.machine)} : ${r.stderr.trim().slice(0, 160)}`, true);
+        if (r.code !== 0) this.dire(`Could not read from ${dans(this.machine)}: ${r.stderr.trim().slice(0, 160)}`, true);
       } catch (e) {
         this.noms = [];
-        this.dire(`${libelle(this.machine)} injoignable : ${String(e).slice(0, 160)}`, true);
+        this.dire(`${libelle(this.machine)} unreachable: ${String(e).slice(0, 160)}`, true);
       }
       cx.notify();
     });
@@ -102,8 +104,8 @@ export default class Vault extends View {
   enregistrer(cx) {
     const nom = this.nom.value().trim();
     const valeur = this.valeur.value();
-    if (!NOM_VALIDE.test(nom)) { this.dire("Nom invalide : lettres, chiffres et _, sans chiffre au début.", true); cx.notify(); return; }
-    if (!valeur) { this.dire("Valeur vide (pour retirer une variable, utilisez « retirer » dans la liste).", true); cx.notify(); return; }
+    if (!NOM_VALIDE.test(nom)) { this.dire("Invalid name: letters, digits and _, not starting with a digit.", true); cx.notify(); return; }
+    if (!valeur) { this.dire("Empty value (to remove a variable, use Remove in the list).", true); cx.notify(); return; }
     this.occupe = true; cx.notify();
     cx.spawn(async (cx) => {
       try {
@@ -111,10 +113,10 @@ export default class Vault extends View {
         if (r.code === 0) {
           this.valeur.set_value("");
           this.nom.set_value("");
-          this.dire(`${nom} enregistrée sur ${libelle(this.machine)} (nouveaux terminaux, ou exec $SHELL).`);
-        } else this.dire(`Échec sur ${libelle(this.machine)} : ${r.stderr.trim().slice(0, 200)}`, true);
+          this.dire(`${nom} saved on ${dans(this.machine)} (new terminals, or exec $SHELL).`);
+        } else this.dire(`Failed on ${dans(this.machine)}: ${r.stderr.trim().slice(0, 200)}`, true);
       } catch (e) {
-        this.dire(`Échec : ${String(e).slice(0, 200)}`, true);
+        this.dire(`Failed: ${String(e).slice(0, 200)}`, true);
       }
       this.occupe = false;
       this.charger(cx);
@@ -127,9 +129,9 @@ export default class Vault extends View {
     cx.spawn(async (cx) => {
       try {
         const r = await this.lancer(ecrire(nom), "");
-        this.dire(r.code === 0 ? `${nom} retirée de ${libelle(this.machine)}.` : `Échec : ${r.stderr.trim().slice(0, 200)}`, r.code !== 0);
+        this.dire(r.code === 0 ? `${nom} removed from ${dans(this.machine)}.` : `Failed: ${r.stderr.trim().slice(0, 200)}`, r.code !== 0);
       } catch (e) {
-        this.dire(`Échec : ${String(e).slice(0, 200)}`, true);
+        this.dire(`Failed: ${String(e).slice(0, 200)}`, true);
       }
       this.charger(cx);
       cx.notify();
@@ -168,15 +170,17 @@ export default class Vault extends View {
       .child(svg("mods/vault/vault.svg").size(14).flex_none().text_color(t.muted))
       .child(div().flex_1().min_w(0).truncate().font_family(settings().font_family ?? "JetBrains Mono").text_size(12).child(n))
       .child(div().id(`x-${n}`).text_size(11).text_color(t.dim).cursor_pointer().hover((s) => s.text_color(t.ansi1))
-        .on_click((_e, cx) => this.retirer(n, cx)).child("Retirer"));
+        .on_click((_e, cx) => this.retirer(n, cx)).child("Remove"));
 
-    return v_flex().id("vault").size_full().min_h(0).when(overlay, (e) => e.h(480)).rounded(10).overflow_hidden()
-      .bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(13)
+    // En popup, Herdr dessine le cadre (bordure arrondie de 6 px, ombre) sans couper ce qu'il contient : le fond
+    // est arrondi à 5 px (le rayon intérieur du cadre) et sans bordure à soi ; en panneau, son propre cadre.
+    return v_flex().id("vault").size_full().min_h(0).when(overlay, (e) => e.h(480)).rounded(overlay ? 5 : 10).overflow_hidden()
+      .bg(t.background).when(!overlay, (e) => e.border_1().border_color(t.border)).text_color(t.foreground).text_size(13)
       .track_focus(this.handle).on_key_down((e, cx) => this.touche(e, cx))
       .child(h_flex().h(42).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border)
         .child(div().font_semibold().child("Vault"))
         .child(div().px(5).py(1).rounded(4).border_1().border_color(t.border).text_size(10).text_color(t.muted)
-          .child(`${this.noms.length} variable${this.noms.length > 1 ? "s" : ""}`))
+          .child(`${this.noms.length} variable${this.noms.length === 1 ? "" : "s"}`))
         .child(div().flex_1())
         .child(div().text_size(11).text_color(t.dim).child(overlay ? "Esc" : "0600 · ~/.config/herdr-vault")))
       .child(h_flex().flex_none().p(6).gap(4).flex_wrap().border_b(1).border_color(t.border).children(liste.map(puce)))
@@ -184,7 +188,7 @@ export default class Vault extends View {
         .child(v_flex().id("vault-list").absolute().inset_0().overflow_y_scroll().p(6)
           .children(this.noms.map(ligne))
           .when(!this.noms.length, (e) => e.child(div().p(8).text_size(12).text_color(t.dim)
-            .child(`Aucune variable sur ${libelle(this.machine)}`))))
+            .child(`No variables on ${dans(this.machine)}`))))
         .child(Scrollbar.vertical("vault-list").absolute().inset_0()))
       .when(Boolean(this.message), (e) => e.child(div().px(12).pb(8).text_size(11)
         .text_color(this.erreur ? t.ansi1 : t.dim).child(this.message)))
@@ -194,6 +198,6 @@ export default class Vault extends View {
           .child(div().id("enregistrer").h(32).px(14).flex().items_center().rounded(8).text_size(12)
             .bg(pret ? t.solid : t.raised).text_color(pret ? t.solid_foreground : t.dim)
             .when(pret, (e) => e.cursor_pointer()).on_click((_e, cx) => this.enregistrer(cx))
-            .child(this.occupe ? "Enregistrement…" : "Enregistrer"))));
+            .child(this.occupe ? "Saving…" : "Save"))));
   }
 }

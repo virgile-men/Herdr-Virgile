@@ -6,10 +6,10 @@
 // Session : claude.js session(), résolue toutes les 10 s (un /clear change de session, tout repart).
 // Contexte : `claude -p /context --resume <session> --no-session-persistence` lancé sur la machine
 // de l'agent, dans son dossier. Commande locale de Claude Code : aucun appel au modèle, rien d'écrit
-// dans la session. Relancée seulement quand le journal a grandi, ou par « Actualiser ».
+// dans la session. Relancée seulement quand le journal a grandi, ou par « Refresh ».
 // Sous-agents : ceux de Claude Code (sous-agents.js) et les sandboxes sbx de pve-dell lancées par la session
 // avec dsbx (sbx.js).
-// Cache : cache-etat.js (commun avec le popup Cache, ouvert par « Détails »), avec les boutons keepwarm et garde. Sous-agents : sous-agents.js.
+// Cache : cache-etat.js (commun avec le popup Cache, ouvert par « Details »), avec les boutons keepwarm et garde. Sous-agents : sous-agents.js.
 // Tâches : le lecteur de journal du mod chat (copié de chat/core/ dans core/ par vault-setup.py), le même que le chat et
 // l'app web : shells et moniteurs encore vivants (leurs processus tiennent le fichier de sortie ouvert),
 // arrêtables. Les sous-agents ont leur propre section.
@@ -57,14 +57,8 @@ m="$4"
 exec claude -p /context --resume "$1" --no-session-persistence --output-format json ${"$"}{m:+--model "$m"} </dev/null`;
 
 const COULEURS = { "Messages": "#3b82f6", "MCP tools": "#f26b3a", "System tools": "#10a37f", "Memory files": "#d4a017" };
-const NOMS = {
-  "Messages": "Messages", "MCP tools": "Outils MCP", "System tools": "Outils système", "Memory files": "Fichiers mémoire",
-  "Skills": "Skills", "System prompt": "Prompt système", "Custom agents": "Agents personnalisés",
-  "MCP server instructions": "Instructions des serveurs MCP", "Autocompact buffer": "Réserve d'autocompactage",
-  "Free space": "Espace libre", "MCP tools (deferred)": "Outils MCP (différés)", "System tools (deferred)": "Outils système (différés)",
-  "MCP Tools": "Outils MCP", "Memory Files": "Fichiers mémoire", "Custom Agents": "Agents personnalisés", "Agents": "Agents personnalisés",
-};
-const nom = (n) => NOMS[n] ?? n;
+// Les noms des catégories et des sections de /context, affichés tels que Claude Code les écrit (en anglais).
+const nom = (n) => n;
 
 // "16.6k" → 16600, "1m" → 1e6, "~350" → 350.
 const nombre = (s) => {
@@ -73,8 +67,8 @@ const nombre = (s) => {
   const v = parseFloat(m[1].replace(",", "."));
   return m[2].toLowerCase() === "k" ? v * 1e3 : m[2].toLowerCase() === "m" ? v * 1e6 : v;
 };
-const court = (v) => (!isFinite(v) ? "—" : v >= 1e6 ? `${+(v / 1e6).toFixed(1)}m` : v >= 1e3 ? `${+(v / 1e3).toFixed(1)}k` : String(Math.round(v)));
-const pct = (v, total) => (total > 0 ? `${(v / total * 100).toFixed(1).replace(".", ",")} %` : "—");
+const court = (v) => (!isFinite(v) ? "—" : v >= 1e6 ? `${+(v / 1e6).toFixed(1)}M` : v >= 1e3 ? `${+(v / 1e3).toFixed(1)}k` : String(Math.round(v)));
+const pct = (v, total) => { const x = v / total * 100; return total > 0 && isFinite(x) ? `${x >= 10 ? Math.round(x) : x.toFixed(1)}%` : "—"; };
 // Le markdown de /context → { model, used, window, cats: [{ name, tokens }], sections: [{ title, rows: [{ name, tokens }] }] }.
 function lire(md) {
   const out = { model: null, used: NaN, window: NaN, cats: [], sections: [] };
@@ -171,12 +165,12 @@ export default class Session extends View {
   ressources(t, ressource) {
     const reduit = (shared(RES_REDUIT) ?? true) === true;
     const A = this.res, M = this.resM, S = this.session;
-    const nomMachine = S?.machine ?? "Cet ordinateur";
-    const mesure = (x, f) => (x == null ? "mesure…" : f(x));
+    const nomMachine = S?.machine ?? "This computer";
+    const mesure = (x, f) => (x == null ? "measuring…" : f(x));
     const out = [h_flex().id("ressources-bascule").px(14).pt(14).pb(8).gap(6).items_center().cursor_pointer()
-      .tooltip(reduit ? "Afficher le détail" : "Réduire à deux lignes")
+      .tooltip(reduit ? "Show details" : "Collapse to two lines")
       .on_click((_e, cx) => { setShared(RES_REDUIT, !reduit); cx.notify(); })
-      .child(div().text_size(12).font_semibold().text_color(t.muted).child("Ressources"))
+      .child(div().text_size(12).font_semibold().text_color(t.muted).child("Resources"))
       .child(svg(`mods/files/chevron-${reduit ? "right" : "down"}.svg`).size(12).flex_none().text_color(t.dim))];
     const sous = (texte) => div().px(14).pt(4).pb(2).text_size(11).text_color(t.dim).truncate().child(texte);
     if (reduit) {
@@ -189,24 +183,24 @@ export default class Session extends View {
         .child(div().w(44).flex_none().truncate().child(cpu))
         .child(div().w(74).flex_none().truncate().child(ram))
         .child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(`↓${court(rx)} ↑${court(tx)}`));
-      if (A?.erreur) out.push(ressource("Cet agent", "bot", `illisibles : ${A.erreur}`, null));
-      else if (A) out.push(ligne("Cet agent", "bot", mesure(A.cpu, pourcent), octets(A.rss), A.rx, A.tx, `Cet agent : ${resume(A)}\n${detail(A)}`));
-      if (M?.erreur) out.push(ressource(`Machine · ${nomMachine}`, "monitor", `illisible : ${M.erreur}`, null));
-      else if (M) out.push(ligne(`Machine · ${nomMachine}`, "monitor", mesure(M.cpu, pourcent), `${octets(M.utilisee).replace(/ Go$/, "")}/${octets(M.total)}`, M.rx, M.tx, `Machine · ${nomMachine} : ${resumeMachine(M)}\n${detailMachine(M)}`));
+      if (A?.erreur) out.push(ressource("This agent", "bot", `unreadable: ${A.erreur}`, null));
+      else if (A) out.push(ligne("This agent", "bot", mesure(A.cpu, pourcent), octets(A.rss), A.rx, A.tx, `This agent: ${resume(A)}\n${detail(A)}`));
+      if (M?.erreur) out.push(ressource(`Machine · ${nomMachine}`, "monitor", `unreadable: ${M.erreur}`, null));
+      else if (M) out.push(ligne(`Machine · ${nomMachine}`, "monitor", mesure(M.cpu, pourcent), `${octets(M.utilisee).replace(/ GB$/, "")}/${octets(M.total)}`, M.rx, M.tx, `Machine · ${nomMachine}: ${resumeMachine(M)}\n${detailMachine(M)}`));
       return out;
     }
-    if (A && A.erreur) out.push(ressource("Cet agent", "bot", `illisibles : ${A.erreur}`, null));
+    if (A && A.erreur) out.push(ressource("This agent", "bot", `unreadable: ${A.erreur}`, null));
     else if (A) out.push(
-      sous(`Cet agent · ${A.nproc} processus`),
-      ressource("Processeur (agent)", "cpu", `${mesure(A.cpu, pourcent)} d'un cœur`, A.cpu == null ? null : A.cpu / 100 / (A.machine?.cpus || 1), detail(A)),
-      ressource("Mémoire (agent)", "memory-stick", `${octets(A.rss)}${A.machine?.total ? ` · ${pourcent(A.rss / A.machine.total * 100)} de la machine` : ""}`, A.machine?.total ? A.rss / A.machine.total : null, detail(A)),
-      ressource("Réseau (agent)", "arrow-down-up", A.rx == null ? "mesure…" : `↓ ${debit(A.rx)} · ↑ ${debit(A.tx)}`, null, detail(A)));
-    if (M && M.erreur) out.push(ressource(`Machine · ${nomMachine}`, "monitor", `illisible : ${M.erreur}`, null));
+      sous(`This agent · ${A.nproc} process${A.nproc === 1 ? "" : "es"}`),
+      ressource("CPU (agent)", "cpu", `${mesure(A.cpu, pourcent)} of one core`, A.cpu == null ? null : A.cpu / 100 / (A.machine?.cpus || 1), detail(A)),
+      ressource("Memory (agent)", "memory-stick", `${octets(A.rss)}${A.machine?.total ? ` · ${pourcent(A.rss / A.machine.total * 100)} of the machine` : ""}`, A.machine?.total ? A.rss / A.machine.total : null, detail(A)),
+      ressource("Network (agent)", "arrow-down-up", A.rx == null ? "measuring…" : `↓ ${debit(A.rx)} · ↑ ${debit(A.tx)}`, null, detail(A)));
+    if (M && M.erreur) out.push(ressource(`Machine · ${nomMachine}`, "monitor", `unreadable: ${M.erreur}`, null));
     else if (M) out.push(
-      sous(`Machine · ${nomMachine} · ${M.cpus} cœur${M.cpus > 1 ? "s" : ""}`),
-      ressource("Processeur (machine)", "cpu", `${mesure(M.cpu, pourcent)}${M.charge != null ? ` · charge ${String(M.charge.toFixed(2)).replace(".", ",")}` : ""}`, M.cpu == null ? null : M.cpu / 100, detailMachine(M)),
-      ressource("Mémoire (machine)", "memory-stick", `${octets(M.utilisee)} / ${octets(M.total)} · ${pourcent(M.utilisee / (M.total || 1) * 100)}`, M.total ? M.utilisee / M.total : null, detailMachine(M)),
-      ressource("Réseau (machine)", "arrow-down-up", M.rx == null ? `${M.iface || "?"} · mesure…` : `${M.iface || "?"} · ↓ ${debit(M.rx)} · ↑ ${debit(M.tx)}`, null, detailMachine(M)));
+      sous(`Machine · ${nomMachine} · ${M.cpus} core${M.cpus === 1 ? "" : "s"}`),
+      ressource("CPU (machine)", "cpu", `${mesure(M.cpu, pourcent)}${M.charge != null ? ` · load ${M.charge.toFixed(2)}` : ""}`, M.cpu == null ? null : M.cpu / 100, detailMachine(M)),
+      ressource("Memory (machine)", "memory-stick", `${octets(M.utilisee)} / ${octets(M.total)} · ${pourcent(M.utilisee / (M.total || 1) * 100)}`, M.total ? M.utilisee / M.total : null, detailMachine(M)),
+      ressource("Network (machine)", "arrow-down-up", M.rx == null ? `${M.iface || "?"} · measuring…` : `${M.iface || "?"} · ↓ ${debit(M.rx)} · ↑ ${debit(M.tx)}`, null, detailMachine(M)));
     return out;
   }
 
@@ -253,12 +247,12 @@ export default class Session extends View {
         const model = im >= 0 ? argv[im + 1] ?? "" : (argv.find((x) => x.startsWith("--model=")) ?? "").slice(8);
         const r = await exec("sh", ["-c", CONTEXTE, "contexte", s.id, s.cwd, s.file, model], { on: s.machine, timeout: 90000 });
         if (this.addr !== addr || this.session?.id !== s.id) return;
-        // Réussi ou non, pas de nouvel essai avant que le journal grandisse (ou « Actualiser »).
+        // Réussi ou non, pas de nouvel essai avant que le journal grandisse (ou « Refresh »).
         this.tailleLue = s.size;
         let j = null;
         try { j = JSON.parse(r.stdout); } catch {}
         if (!j || j.is_error || typeof j.result !== "string") {
-          this.erreurCtx = `/context a échoué : ${(r.stderr || j?.result || r.stdout || "").trim().slice(0, 200)}`;
+          this.erreurCtx = `/context failed: ${(r.stderr || j?.result || r.stdout || "").trim().slice(0, 200)}`;
           return;
         }
         this.donnees = lire(j.result); this.erreurCtx = null;
@@ -360,7 +354,7 @@ export default class Session extends View {
     if (!L) return;
     cx.spawn(async (cx) => {
       const ok = await L.stopJob(id).catch(() => false);
-      this.note = ok ? "Tâche arrêtée." : "Cette tâche est déjà terminée.";
+      this.note = ok ? "Task stopped." : "This task has already finished.";
       await L.lookJobs().catch(() => {});
       cx.notify();
     });
@@ -371,7 +365,7 @@ export default class Session extends View {
     const addr = this.addr;
     cx.spawn(async (cx) => {
       const r = await hc(["send", addr, texte]).catch((e) => ({ code: 1, stderr: String(e) }));
-      this.note = r.code === 0 ? `${texte} envoyé à la session.` : `Échec de ${texte} : ${(r.stderr || "").trim().slice(0, 160)}`;
+      this.note = r.code === 0 ? `${texte} sent to the session.` : `${texte} failed: ${(r.stderr || "").trim().slice(0, 160)}`;
       this.cache.dernierTour = 0;
       cx.notify();
     });
@@ -382,7 +376,7 @@ export default class Session extends View {
     const addr = this.addr;
     cx.spawn(async (cx) => {
       const r = await hc(["send", addr, "/compact"]).catch((e) => ({ code: 1, stderr: String(e) }));
-      this.note = r.code === 0 ? "/compact envoyé à la session." : `Échec de /compact : ${(r.stderr || "").trim().slice(0, 160)}`;
+      this.note = r.code === 0 ? "/compact sent to the session." : `/compact failed: ${(r.stderr || "").trim().slice(0, 160)}`;
       cx.notify();
     });
   }
@@ -396,10 +390,10 @@ export default class Session extends View {
   // réécritures payées, et l'alerte de cache-tax. Le reste (boutons keepwarm, garde) : panneau Cache.
   resumeCache(t, maintenant) {
     const E = this.cache;
-    if (!E.lu) return [div().mx(14).h(24).text_size(12).text_color(E.erreur ? t.ansi1 : t.dim).child(E.erreur ?? "Lecture du journal…")];
+    if (!E.lu) return [div().mx(14).h(24).text_size(12).text_color(E.erreur ? t.ansi1 : t.dim).child(E.erreur ?? "Reading the log…")];
     const c = E.calcul(maintenant);
-    const sous = c.etat === "garde" ? `dernier envoi il y a ${dureeCourte(c.ecoule)}`
-      : c.etat === "inconnu" ? (c.compacteApres ? "session compactée" : "aucun envoi lu") : c.sousEtat;
+    const sous = c.etat === "garde" ? `last send ${dureeCourte(c.ecoule)} ago`
+      : c.etat === "inconnu" ? (c.compacteApres ? "session compacted" : "nothing sent yet") : c.sousEtat;
     const valeur = (cle, val, ton) => h_flex().id(`cr-${cle}`).h(24).flex_none().mx(6).px(8).gap(8).items_center()
       .child(div().w(10).flex_none())
       .child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(t.muted).child(cle))
@@ -412,7 +406,7 @@ export default class Session extends View {
         .child(div().flex_none().text_size(11).text_color(t.dim).child(`cache ${c.ttlMot}`)),
     ];
     // Les commandes du plugin, envoyées à la session comme si on les tapait (les prix, l'explication et les
-    // réécritures : popup Cache, par « Détails »).
+    // réécritures : popup Cache, par « Details »).
     const ok = E.plugin !== false;
     const bouton = (id, texte, commande, actif = false, permis = true) => div().id(id).h(24).px(8).flex().items_center().rounded(6)
       .border_1().border_color(actif ? t.accent : t.border).text_size(11.5)
@@ -423,21 +417,21 @@ export default class Session extends View {
     const groupe = (id, cle, etat, tonEtat, boutons) => v_flex().id(id).flex_none().pb(4)
       .child(valeur(cle, etat, tonEtat))
       .child(h_flex().flex_none().pl(32).pr(14).gap(6).items_center().flex_wrap().children(boutons));
-    out.push(groupe("cr-kw", "Keepwarm", c.arme ? `${dureeCourte(c.deadline - maintenant)} restantes` : "arrêté", c.arme ? VERT : t.dim, [
-      bouton("cr-kw-90", "90 min", "/keepwarm 90m"),
-      bouton("cr-kw-6h", "6 h", "/keepwarm"),
-      bouton("cr-kw-off", "Arrêter", "/keepwarm off", false, c.arme || c.toujours),
+    out.push(groupe("cr-kw", "Keepwarm", c.arme ? `${dureeCourte(c.deadline - maintenant)} left` : "stopped", c.arme ? VERT : t.dim, [
+      bouton("cr-kw-90", "90m", "/keepwarm 90m"),
+      bouton("cr-kw-6h", "6h", "/keepwarm"),
+      bouton("cr-kw-off", "Stop", "/keepwarm off", false, c.arme || c.toujours),
     ]));
-    out.push(groupe("cr-garde", "Garde", c.garde === "refuse" ? "bloque une fois" : "avertit seulement", t.muted, [
-      bouton("cr-g-warn", "Avertir seulement", "/cache-tax guard warn", c.garde === "warn"),
-      bouton("cr-g-refuse", "Bloquer", "/cache-tax guard refuse", c.garde === "refuse"),
+    out.push(groupe("cr-garde", "Guard", c.garde === "refuse" ? "blocks once" : "warns only", t.muted, [
+      bouton("cr-g-warn", "Warn only", "/cache-tax guard warn", c.garde === "warn"),
+      bouton("cr-g-refuse", "Block", "/cache-tax guard refuse", c.garde === "refuse"),
     ]));
-    if (E.manques.length) out.push(valeur("Réécritures payées", `${E.manques.length} · ≈${dollars(c.paye)}`));
-    if (E.plugin === false) out.push(div().mx(14).pt(2).text_size(11.5).text_color(t.dim).child(`cache-tax n'est pas actif sur ${this.session?.machine ?? "cette machine"}`));
+    if (E.manques.length) out.push(valeur("Rewrites paid", `${E.manques.length} · ≈ ${dollars(c.paye)}`));
+    if (E.plugin === false) out.push(div().mx(14).pt(2).text_size(11.5).text_color(t.dim).child(`cache-tax is not active on ${this.session?.machine ?? "this computer"}`));
     if (c.alerte) out.push(div().mx(14).mt(6).p(8).rounded(8).border_1().border_color(ORANGE).text_size(12)
       .child(c.garde === "refuse"
-        ? `Le prochain message sera bloqué une fois par cache-tax : il réécrirait ${milliers(c.ctx)} tokens (≈${dollars(c.froidUsd)}).`
-        : `Le prochain message réécrira ${milliers(c.ctx)} tokens (≈${dollars(c.froidUsd)}).`));
+        ? `cache-tax will block the next message once: it would rewrite ${milliers(c.ctx)} tokens (≈ ${dollars(c.froidUsd)}).`
+        : `The next message will rewrite ${milliers(c.ctx)} tokens (≈ ${dollars(c.froidUsd)}).`));
     return out;
   }
 
@@ -487,11 +481,11 @@ export default class Session extends View {
       .when(this.envSurvol === cle, (el) => el.child(etiquette(cle)));
     const info = (cle, nomIcone, val) => h_flex().id(`env-${cle}`).h(26).flex_none().mx(6).px(8).gap(8).items_center().rounded(7)
       .child(iconeEnv(cle, nomIcone, 26))
-      .child(div().id(`env-v-${cle}`).flex_1().min_w(0).truncate().tooltip(`${cle} : ${val}`).child(val));
+      .child(div().id(`env-v-${cle}`).flex_1().min_w(0).truncate().tooltip(`${cle}: ${val}`).child(val));
     // Une ligne de ressource : comme info(), avec une petite barre (part de la machine) et le détail en infobulle.
     const ressource = (cle, nomIcone, val, part, plus = "") => h_flex().id(`env-${cle}`).h(26).flex_none().mx(6).px(8).gap(8).items_center().rounded(7)
       .child(iconeEnv(cle, nomIcone, 26))
-      .child(div().id(`env-v-${cle}`).flex_1().min_w(0).truncate().tooltip(plus ? `${cle} : ${val}\n${plus}` : `${cle} : ${val}`).child(val))
+      .child(div().id(`env-v-${cle}`).flex_1().min_w(0).truncate().tooltip(plus ? `${cle}: ${val}\n${plus}` : `${cle}: ${val}`).child(val))
       .when(part != null, (el) => el.child(div().w(48).h(4).flex_none().rounded(2).bg(t.hover)
         .child(div().h_full().rounded(2).bg(part > 0.8 ? ORANGE : t.accent).w(`${Math.max(2, Math.min(100, Math.round(part * 100)))}%`))));
     const branche = panes().find((p) => p.terminal === this.addr)?.branch ?? null;
@@ -507,10 +501,10 @@ export default class Session extends View {
       .child(div().flex_1().min_w(0).truncate().child(x.label))
       .child(div().flex_none().text_size(12).text_color(t.muted).child(x.at ? duree(maintenant - x.at) : ""))
       .when(Boolean(x.job), (el) => el.child(div().id(`stop-${x.id}`).size(18).flex_none().flex().items_center().justify_center()
-        .rounded(4).cursor_pointer().hover((s) => s.bg(t.raised)).tooltip("Arrêter cette tâche")
+        .rounded(4).cursor_pointer().hover((s) => s.bg(t.raised)).tooltip("Stop this task")
         .on_click((_e, cx) => this.arreter(x.id, cx))
         .child(div().size(9).rounded(2).bg(t.foreground))));
-    const vide = this.erreur || (this.addr ? "Lecture de la session…" : "Sélectionnez un terminal Claude Code.");
+    const vide = this.erreur || (this.addr ? "Reading the session…" : "Select a Claude Code terminal.");
 
     return v_flex().id("contexte").size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border)
       .text_color(t.foreground).text_size(13)
@@ -519,14 +513,14 @@ export default class Session extends View {
         .child(div().flex_1().min_h(0).relative()
           .child(v_flex().id("contexte-liste").absolute().inset_0().overflow_y_scroll().pb(10)
             // Environnement
-            .child(titre("Environnement"))
+            .child(titre("Environment"))
             .child(h_flex().id("env-machine").h(28).flex_none().mx(6).px(8).gap(8).items_center()
               .child(iconeEnv("Machine · terminal", "monitor", 28))
               .child(div().flex_1().min_w(0).truncate().font_semibold()
-                .child(`${S?.machine ?? "Ce serveur"} · ${this.addr?.split("/").pop() ?? ""}`)))
-            .child(info("Dossier", "folder", S?.cwd || "—"))
-            .when(Boolean(branche), (x) => x.child(info("Branche", "branch", branche)))
-            .child(info("Modèle", "sparkle", d?.model ?? this.cache.der?.modele ?? "—"))
+                .child(`${S?.machine ?? "This computer"} · ${this.addr?.split("/").pop() ?? ""}`)))
+            .child(info("Folder", "folder", S?.cwd || "—"))
+            .when(Boolean(branche), (x) => x.child(info("Branch", "branch", branche)))
+            .child(info("Model", "sparkle", d?.model ?? this.cache.der?.modele ?? "—"))
             .child(info("Session", "hash", S?.id ?? "—"))
             .when(Boolean(S?.version), (x) => x.child(info("Version", "tag", `Claude Code ${S.version}`)))
             .when(Boolean(this.res || this.resM), (x) => x.child(sep()).children(this.ressources(t, ressource)))
@@ -534,17 +528,17 @@ export default class Session extends View {
             // Contexte : la barre, et le détail par poste sauf en mode réduit (clic sur le titre).
             .child(h_flex().items_center().pr(14)
               .child(h_flex().id("contexte-bascule").flex_1().px(14).pt(14).pb(8).gap(6).items_center().cursor_pointer()
-                .tooltip(reduit ? "Afficher le détail" : "Réduire à la barre")
+                .tooltip(reduit ? "Show details" : "Collapse to the bar")
                 .on_click((_e, cx) => { setShared(REDUIT, !reduit); cx.notify(); })
-                .child(div().text_size(12).font_semibold().text_color(t.muted).child("Contexte"))
+                .child(div().text_size(12).font_semibold().text_color(t.muted).child("Context"))
                 .child(svg(`mods/files/chevron-${reduit ? "right" : "down"}.svg`).size(12).flex_none().text_color(t.dim)))
-              .child(lien("contexte-maj", this.charge ? "…" : "Actualiser", (cx) => this.toutRelire(cx))))
+              .child(lien("contexte-maj", this.charge ? "…" : "Refresh", (cx) => this.toutRelire(cx))))
             .when(!d, (x) => x.child(div().mx(14).pb(4).text_size(12).text_color(this.erreurCtx ? t.ansi1 : t.dim)
-              .child(this.erreurCtx ?? "Lecture de /context…")))
+              .child(this.erreurCtx ?? "Reading /context…")))
             .when(Boolean(d), (x) => x
               .child(v_flex().flex_none().mx(14).pb(8).gap(8)
                 .child(h_flex().items_center()
-                  .child(div().flex_1().font_semibold().child(`${isFinite(utilise / fenetre) ? Math.round(utilise / fenetre * 100) : "?"} % utilisé`))
+                  .child(div().flex_1().font_semibold().child(`${isFinite(utilise / fenetre) ? Math.round(utilise / fenetre * 100) : "?"}% used`))
                   .child(div().text_size(12).text_color(t.muted).child(`${court(utilise)} / ${court(fenetre)}`)))
                 .child(h_flex().h(6).w_full().rounded(3).overflow_hidden().bg(t.raised)
                   .children(barre.map((c) => div().h_full().flex_none().w(`${Math.max(0.4, c.tokens / fenetre * 100).toFixed(2)}%`).bg(couleur(c))))))
@@ -556,25 +550,25 @@ export default class Session extends View {
               .when(Boolean(this.erreurCtx), (x) => x.child(div().mx(14).pt(4).text_size(11).text_color(t.ansi1).child(this.erreurCtx))))
             .child(h_flex().flex_none().mx(14).pt(reduit ? 2 : 10).gap(8).items_center()
               .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.muted)
-                .child(isFinite(libre) ? `${court(libre)} avant autocompactage` : ""))
+                .child(isFinite(libre) ? `${court(libre)} before auto-compact` : ""))
               .child(div().id("compacter").h(28).px(12).flex().items_center().rounded(7).border_1().border_color(t.border)
-                .text_size(12).cursor_pointer().hover((s) => s.bg(t.hover)).on_click((_e, cx) => this.compacter(cx)).child("Compacter la session")))
+                .text_size(12).cursor_pointer().hover((s) => s.bg(t.hover)).on_click((_e, cx) => this.compacter(cx)).child("Compact the session")))
             .child(sep())
             // Cache (résumé ; le détail et les boutons : panneau Cache)
             .child(h_flex().items_center().pr(14).child(div().flex_1().child(titre("Cache")))
-              .child(lien("cache-details", "Détails", () => run("mod.open", { name: "cache" }))))
+              .child(lien("cache-details", "Details", () => run("mod.open", { name: "cache" }))))
             .children(this.resumeCache(t, maintenant))
             .child(sep())
             // Tâches en arrière-plan
-            .child(titre("Tâches en arrière-plan"))
+            .child(titre("Background tasks"))
             .children(taches.map(tache))
-            .when(!taches.length, (x) => x.child(div().mx(14).h(24).text_size(12).text_color(t.dim).child("Aucune tâche en cours")))
+            .when(!taches.length, (x) => x.child(div().mx(14).h(24).text_size(12).text_color(t.dim).child("No task running")))
             .child(h_flex().id("finies").h(28).flex_none().mx(6).px(8).gap(8).items_center()
               .child(svg("mods/contexte/check.svg").size(14).flex_none().text_color(t.muted))
-              .child(div().text_size(12.5).text_color(t.muted).child(`Terminées : ${finies}`)))
+              .child(div().text_size(12.5).text_color(t.muted).child(`Finished: ${finies}`)))
             .child(sep())
             // Sous-agents (l'ancien panneau Équipe)
-            .child(titre("Sous-agents"))
+            .child(titre("Sub-agents"))
             .children(this.equipe.elements(t, maintenant, this.sbx.elements(t, maintenant)))
             .child(sep())
             // Profile (harness-profiler; collapsible like Context; the tree and the sequence diagram: Profile popup)

@@ -1,8 +1,8 @@
 // Cache : le cache de prompt de la session Claude Code suivie (terminal actif, ou agent d'un volet de chat),
 // comme la ligne et la carte /cache-tax du mod Claude cache-tax : chaud ou froid, depuis quand, ce que coûte
 // un envoi à froid (la réécriture du contexte) face à un tour à chaud, les réécritures déjà payées, et
-// la fenêtre keepwarm. Un popup (dialogue), ouvert par « Détails » dans la section Cache du panneau
-// Session, qui a les boutons keepwarm (90 min, 6 h, Arrêter) et garde (Avertir seulement, Bloquer).
+// la fenêtre keepwarm. Un popup (dialogue), ouvert par « Details » dans la section Cache du panneau
+// Session, qui a les boutons keepwarm (90m, 6h, Stop) et garde (Warn only, Block).
 //
 // La lecture (journal et store du plugin) est dans cache-etat.js, commun avec Session. Garder au chaud et
 // le garde restent le travail du plugin cache-tax, dans Claude Code.
@@ -13,6 +13,10 @@ import { cible, session, affiche, nomModele, tokens, dollars, milliers, dureeCou
 import { EtatCache, ORANGE, VERT } from "./cache-etat.js";
 
 const ID = "cache";
+// "17 Nov, 10:36" (le moteur des mods ignore la locale et les options de toLocaleString : écrit à la main).
+const MOIS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const deux = (n) => String(n).padStart(2, "0");
+const quand = (ms) => { const d = new Date(ms); return `${d.getDate()} ${MOIS[d.getMonth()]}, ${deux(d.getHours())}:${deux(d.getMinutes())}`; };
 
 export default class Cache extends View {
   init(_props, cx) {
@@ -81,18 +85,20 @@ export default class Cache extends View {
     const motEtat = c.mot;
     const sousEtat = c.sousEtat;
     const erreur = this.erreur || E.erreur;
-    const vide = erreur || (this.addr ? "Lecture de la session…" : "Sélectionnez un terminal Claude Code.");
+    const vide = erreur || (this.addr ? "Reading the session…" : "Select a Claude Code terminal.");
     // Garder au chaud, en clair, avec les prix de cette session.
-    const aChaud = chaudUsd != null ? `≈${dollars(chaudUsd)}` : "le prix d'un tour à chaud";
-    const aFroid = froidUsd != null ? `≈${dollars(froidUsd)}` : "beaucoup plus";
-    const principe = `Le cache garde la conversation ${c.ttlMot}. Après, le prochain message la réécrit en entier : ${aFroid} ici, contre ${aChaud} à chaud. `
-      + `Pendant une pause, keepwarm la relit toutes les 50 min sans rien y ajouter (${aChaud} le ping), ce qui la garde au chaud jusqu'à la fin de la fenêtre. `
-      + "Claude Code doit rester ouvert ; un cache déjà froid n'est pas relu.";
+    const aChaud = chaudUsd != null ? `≈ ${dollars(chaudUsd)}` : "the price of a warm turn";
+    const aFroid = froidUsd != null ? `≈ ${dollars(froidUsd)}` : "much more";
+    const principe = `The cache keeps the conversation for ${c.ttlMot}. After that, the next message rewrites all of it: ${aFroid} here, versus ${aChaud} while warm. `
+      + `During a break, keepwarm re-reads it every 50 minutes without adding anything (${aChaud} per ping), which keeps it warm until the window ends. `
+      + "Claude Code must stay open; a cache that is already cold is not re-read.";
     const texte = (t2) => div().mx(14).text_size(12).line_height("18px").text_color(t.muted).child(t2);
 
     const overlay = Boolean(props()?.overlay);
-    const lieu = `${S?.machine ?? "Ce serveur"} · ${this.addr?.split("/").pop() ?? ""}`;
-    return v_flex().id("cache").size_full().min_h(0).when(overlay, (e) => e.h(620)).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border)
+    const lieu = `${S?.machine ?? "This computer"} · ${this.addr?.split("/").pop() ?? ""}`;
+    // En popup, Herdr dessine le cadre (bordure arrondie de 6 px, ombre) sans couper ce qu'il contient : le fond
+    // est arrondi à 5 px (le rayon intérieur du cadre) et sans bordure à soi ; en panneau, son propre cadre.
+    return v_flex().id("cache").size_full().min_h(0).when(overlay, (e) => e.h(620)).rounded(overlay ? 5 : 10).overflow_hidden().bg(t.background).when(!overlay, (e) => e.border_1().border_color(t.border))
       .text_color(t.foreground).text_size(13)
       .child(h_flex().h(42).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border)
         .child(div().font_semibold().child("Cache"))
@@ -109,43 +115,43 @@ export default class Cache extends View {
                 .child(div().size(10).flex_none().rounded(5).bg(couleur))
                 .child(div().text_size(16).font_semibold().child(motEtat))
                 .child(div().flex_1())
-                .child(div().text_size(11).text_color(t.dim).child(`cache ${d?.ttl === "5m" ? "5 min" : "1 h"}`)))
+                .child(div().text_size(11).text_color(t.dim).child(`cache ${d?.ttl === "5m" ? "5m" : "1h"}`)))
               .child(div().text_size(12).text_color(t.muted).child(sousEtat)))
             .when(alerte, (x) => x.child(div().mx(14).mt(12).p(10).rounded(8).border_1().border_color(ORANGE).text_size(12)
               .child(garde === "refuse"
-                ? `Le prochain message sera bloqué une fois par cache-tax : il réécrirait jusqu'à ${milliers(E.ctx)} tokens (≈${dollars(froidUsd)}). Renvoyez-le pour payer, ou /clear et repartez d'une note.`
-                : `Le prochain message réécrira jusqu'à ${milliers(E.ctx)} tokens (≈${dollars(froidUsd)}). Le garde de cache-tax ne fait qu'avertir.`)))
+                ? `cache-tax will block the next message once: it would rewrite up to ${milliers(E.ctx)} tokens (≈ ${dollars(froidUsd)}). Send it again to pay, or /clear and start over from a note.`
+                : `The next message will rewrite up to ${milliers(E.ctx)} tokens (≈ ${dollars(froidUsd)}). The cache-tax guard only warns.`)))
             .child(sep())
             // Les chiffres
-            .child(titre("Prix"))
-            .child(info("Modèle", d ? nomModele(d.modele) : "—"))
-            .child(info("Contexte", `${milliers(E.ctx)} tokens`))
-            .child(info("Envoi à froid", `≈${dollars(froidUsd)} (réécriture)`, etat === "froid" ? ORANGE : null))
-            .child(info("Tour à chaud", `≈${dollars(chaudUsd)} (lecture)`))
-            .when(pings != null, (x) => x.child(info("Rentabilité", `${pings} pings (lecture) = 1 réécriture`)))
+            .child(titre("Prices"))
+            .child(info("Model", d ? nomModele(d.modele) : "—"))
+            .child(info("Context", `${milliers(E.ctx)} tokens`))
+            .child(info("Cold send", `≈ ${dollars(froidUsd)} (rewrite)`, etat === "froid" ? ORANGE : null))
+            .child(info("Warm turn", `≈ ${dollars(chaudUsd)} (read)`))
+            .when(pings != null, (x) => x.child(info("Break-even", `${pings} pings (read) = 1 rewrite`)))
             .child(sep())
             // Keepwarm (le plugin)
-            .child(titre("Garder au chaud"))
+            .child(titre("Keep warm"))
             .child(texte(principe).mb(10))
             .when(E.plugin === false, (x) => x.child(div().mx(14).mb(6).text_size(12).text_color(t.dim)
-              .child(`Le plugin cache-tax n'est pas actif sur ${S.machine ?? "cette machine"} : les boutons de Session n'auraient pas d'effet.`)))
-            .child(info("Fenêtre", arme ? `active, ${dureeCourte(deadline - maintenant)} restantes` : "arrêtée", arme ? VERT : t.muted))
-            // « Toujours » (/keepwarm always) n'a plus de bouton ; montré tant qu'il est actif (Arrêter le coupe).
-            .when(toujours, (x) => x.child(info("Toujours", "une fenêtre de 6 h à chaque début de session")))
-            .child(texte("Dans Session : 90 min et 6 h ouvrent une fenêtre pour cette session ; Arrêter la ferme (et coupe « toujours »).").mt(6).text_color(t.dim))
-            .child(info("Garde", garde === "refuse" ? "bloque une fois" : "avertit seulement"))
+              .child(`The cache-tax plugin is not active on ${S.machine ?? "this computer"}: the buttons in Session would have no effect.`)))
+            .child(info("Window", arme ? `active, ${dureeCourte(deadline - maintenant)} left` : "stopped", arme ? VERT : t.muted))
+            // « Always » (/keepwarm always) n'a plus de bouton ; montré tant qu'il est actif (Stop le coupe).
+            .when(toujours, (x) => x.child(info("Always", "a 6h window at every session start")))
+            .child(texte("In Session: 90m and 6h open a window for this session; Stop closes it (and turns off Always).").mt(6).text_color(t.dim))
+            .child(info("Guard", garde === "refuse" ? "blocks once" : "warns only"))
             .child(texte(garde === "refuse"
-              ? "Avant un envoi à froid de plus de 50k tokens, cache-tax affiche le prix et bloque ce premier envoi ; renvoyez-le pour payer. Avertir seulement / Bloquer : dans Session."
-              : "Avant un envoi à froid de plus de 50k tokens, cache-tax affiche le prix, sans bloquer. Avertir seulement / Bloquer : dans Session.").text_color(t.dim))
+              ? "Before a cold send of more than 50k tokens, cache-tax shows the price and blocks that first send; send it again to pay. Warn only / Block: in Session."
+              : "Before a cold send of more than 50k tokens, cache-tax shows the price without blocking. Warn only / Block: in Session.").text_color(t.dim))
             .child(sep())
             // Les réécritures payées
-            .child(titre(`Réécritures payées · ${E.manques.length}${E.manques.length ? ` · ≈${dollars(paye)}` : ""}`))
+            .child(titre(`Rewrites paid · ${E.manques.length}${E.manques.length ? ` · ≈ ${dollars(paye)}` : ""}`))
             .children(E.manques.slice().reverse().slice(0, 12).map((m, i) => h_flex().id(`m-${i}`).h(24).flex_none().mx(6).px(8).gap(8).items_center()
               .child(div().w(118).flex_none().text_size(12).text_color(t.muted)
-                .child(new Date(m.at).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })))
+                .child(quand(m.at)))
               .child(div().flex_1().text_size(12).child(`${tokens(m.tokens)} tokens`))
-              .child(div().text_size(12).text_color(t.muted).child(`≈${dollars(m.usd)}`))))
-            .when(!E.manques.length, (x) => x.child(div().mx(14).text_size(12).text_color(t.dim).child("Aucune dans les 8 derniers Mo du journal."))))
+              .child(div().text_size(12).text_color(t.muted).child(`≈ ${dollars(m.usd)}`))))
+            .when(!E.manques.length, (x) => x.child(div().mx(14).text_size(12).text_color(t.dim).child("None in the last 8 MB of the log."))))
           .child(Scrollbar.vertical("cache-liste").absolute().inset_0()))
         .when(Boolean(erreur), (x) => x.child(div().px(12).py(6).text_size(11).text_color(t.ansi1).child(erreur)))
         .when(Boolean(this.note), (x) => x.child(div().px(12).py(6).text_size(11).text_color(t.dim).child(this.note))));

@@ -13,10 +13,10 @@
 // Repliée en entier (clic sur « Agents », le menu ☰ ou `herdr-app do agents-virgile.replier`) : seul
 // l'en-tête reste, avec le compte des agents par état ; le bloc se réduit à sa hauteur. Le rail étroit
 // n'a pas d'en-tête : il ignore ce repli.
-// Rangés : les agents d'un onglet rangé (tab.settle de Herdr : mis de côté sur cet écran, il tourne
-// toujours) quittent les groupes et les sections pour une section « Rangés » en bas, repliée par défaut,
-// du plus récemment rangé au plus ancien. On range au clic droit (« Ranger son onglet ») ou en lâchant
-// un agent sur l'en-tête Rangés ; on l'en sort au clic droit, en le glissant ailleurs, ou en l'ouvrant
+// Settled : les agents d'un onglet rangé (tab.settle de Herdr : mis de côté sur cet écran, il tourne
+// toujours) quittent les groupes et les sections pour une section « Settled » en bas, repliée par défaut,
+// du plus récemment rangé au plus ancien. On range au clic droit (« Settle its tab ») ou en lâchant
+// un agent sur l'en-tête Settled ; on l'en sort au clic droit, en le glissant ailleurs, ou en l'ouvrant
 // (un onglet affiché revient, comme un onglet dont un agent vous attend). Option du menu ☰ : ranger tout
 // seul un onglet dont les agents sont au repos depuis N jours (jamais celui affiché, ni un épinglé).
 
@@ -67,14 +67,14 @@ function title(tab, l) {
 const SECTION = { 4: "Needs you", 3: "Done", 2: "Working", 1: "Idle" };
 const SECTION_STATUS = { 4: "blocked", 3: "done", 2: "working" };
 const STATUS_OF = { 4: "blocked", 3: "done", 2: "working", 1: "idle" };
-const WORDS = { blocked: "vous attend", working: "en cours", done: "terminé", idle: "au repos" };
+const WORDS = { blocked: "needs you", working: "working", done: "done", idle: "idle" };
 
 // Le bloc de la disposition que cette liste remplit, et ce qu'elle se donne de hauteur.
 const BLOCK = "agents";
 const HEAD = 41; // l'en-tête « Agents »
 const FOOT = 8; // le bas de la liste
 const ROW = 30, SUB = 26, SECTION_H = 30, GROUP_H = 26, RAIL = 26, RAIL_FOOT = 28, EMPTY_H = 64;
-// Rangés : collé en bas, sous la liste qui défile (comme Settled dans T3 Code) ; déplié, au plus cette
+// Settled : collé en bas, sous la liste qui défile (comme Settled dans T3 Code) ; déplié, au plus cette
 // hauteur de lignes, qui défilent à leur tour.
 const RANGES_MAX = 5 * ROW;
 const SHARE = 0.5; // au plus cette part de la colonne Spaces + Agents
@@ -115,7 +115,7 @@ export default class Agents extends View {
     // `herdr-app do agents-virgile.<vue>` : ouvre une vue (pour essayer), sur le premier agent et groupe.
     // `replier` replie ou déplie toute la liste (sans overlay ; on peut aussi le mettre sur une touche).
     // `kanban-compact` bascule les cartes du kanban entre détaillées et compactes.
-    // `ranges` déplie ou replie la section Rangés.
+    // `ranges` déplie ou replie la section Settled.
     cx.spawn(async (cx) => {
       for (;;) {
         const c = await nextCommand();
@@ -174,7 +174,7 @@ export default class Agents extends View {
     return Math.min(max, Math.ceil(content));
   }
 
-  // Note les onglets qui sortent des rangés (affichés, un agent qui vous attend, « Sortir des rangés ») :
+  // Note les onglets qui sortent des rangés (affichés, un agent qui vous attend, « Unsettle ») :
   // le rangement automatique compte ses N jours à partir de là, sinon il les re-rangerait aussitôt. Puis,
   // si l'option est mise, range les onglets dont tous les agents (et sous-agents) sont au repos depuis
   // N jours : ni l'onglet affiché, ni un agent épinglé, affiché ou terminé sans avoir été vu.
@@ -357,7 +357,7 @@ export default class Agents extends View {
     if (from.kind === "a") {
       const mine = A.groupOfAgent(d, from.id);
       const ag = this.byAddrAll.get(from.id);
-      // Sur l'en-tête Rangés : ranger son onglet. Un agent rangé, lâché ailleurs, en sort.
+      // Sur l'en-tête Settled : ranger son onglet. Un agent rangé, lâché ailleurs, en sort.
       if (target.kind === "r" || (target.kind === "a" && target.ctx.settled)) return Boolean(ag?.tab) && !ag.settled;
       const out = Boolean(mine) || Boolean(ag?.settled);
       if (target.kind === "a") return target.ctx.group ? target.ctx.anchor !== A.ref("s", from.id) : out && !target.ctx.settled;
@@ -460,7 +460,7 @@ export default class Agents extends View {
     const now = Date.now();
     this.track(list, now, all);
     this.hold(list);
-    // Les agents des onglets rangés : à part (section Rangés, en bas), du plus récemment rangé au plus ancien.
+    // Les agents des onglets rangés : à part (section Settled, en bas), du plus récemment rangé au plus ancien.
     this.byAddrAll = new Map(list.map((a) => [a.address, a]));
     const ranges = list.filter((a) => a.settled).sort((x, y) => (y.settled_at ?? 0) - (x.settled_at ?? 0));
     list = list.filter((a) => !a.settled);
@@ -647,7 +647,7 @@ export default class Agents extends View {
         const empty = { kind: "g", id: gid, ctx: { empty: true } };
         const away = A.agentsIn(d, gid).filter((x) => this.byAddrAll.get(x)?.settled).length;
         rows.push(this.draggable(h_flex().id(`group-empty-${gid}`).h(GROUP_H).flex_none().px(8).items_center().rounded(7).text_size(11.5).text_color(t.dim)
-          .child(away ? `${away} agent${away > 1 ? "s" : ""} dans Rangés` : "Vide : glissez-y des agents"), empty, false));
+          .child(away ? `${away} agent${away === 1 ? "" : "s"} in Settled` : "Empty: drag agents here"), empty, false));
         h += GROUP_H;
       }
       return { el: v_flex().flex_none().child(header)
@@ -696,24 +696,24 @@ export default class Agents extends View {
           .child(svg(chrome("chevron-right")).size(11).flex_none().text_color(t.dim))), target, false), target, t);
     };
 
-    // L'en-tête Rangés : il les replie ou les déplie (replié par défaut) ; on y lâche un agent pour ranger son onglet.
+    // L'en-tête Settled : il les replie ou les déplie (replié par défaut) ; on y lâche un agent pour ranger son onglet.
     const rangesHead = () => {
       const open = rangesOpen();
       const target = { kind: "r", id: "ranges" };
       return this.marks(this.draggable(h_flex().id("ranges-head").px(8).pt(8).h(SECTION_H).flex_none().gap(6).items_center()
         .text_size(11).font_medium().text_color(t.dim).cursor_pointer()
         .hover((s) => s.text_color(t.foreground))
-        .tooltip("Onglets rangés (tab.settle) : ils tournent toujours. Un onglet affiché, ou dont un agent vous attend, revient de lui-même. Lâchez un agent ici pour ranger son onglet.")
+        .tooltip("Settled tabs (tab.settle): they keep running. A tab you open, or one whose agent needs you, comes back on its own. Drop an agent here to settle its tab.")
         .on_click(() => setRangesOpen(!open))
         .child(svg(icon("archive")).size(12).flex_none())
-        .child(div().child("Rangés"))
+        .child(div().child("Settled"))
         .child(div().child(String(ranges.length)))
         .child(div().flex_1())
         .child(svg(chrome(open ? "chevron-down" : "chevron-right")).size(11).flex_none()), target, false), target, t);
     };
 
     let rows = [];
-    const foot = []; // la section Rangés, sous la liste
+    const foot = []; // la section Settled, sous la liste
     let content = 0;
     if (whole) content = 1 + HEAD;
     else if (collapsed) {
@@ -750,10 +750,10 @@ export default class Agents extends View {
     const counts = { blocked: 0, working: 0, done: 0, idle: 0 };
     for (const a of active) counts[STATUS_OF[rankOf(a)] ?? "idle"] += 1;
     const said = [...["blocked", "working", "done", "idle"].filter((s) => counts[s] > 0).map((s) => `${counts[s]} ${WORDS[s]}`),
-      ...(ranges.length ? [`${ranges.length} rangé${ranges.length > 1 ? "s" : ""}`] : [])].join(" · ");
+      ...(ranges.length ? [`${ranges.length} settled`] : [])].join(" · ");
     const headTitle = h_flex().id("agents-title").min_w(0).gap(5).items_center().cursor_pointer()
       .text_color(t.dim).hover((s) => s.text_color(t.foreground))
-      .tooltip(whole ? `Déplier la liste${said ? ` · ${said}` : ""}` : "Replier toute la liste")
+      .tooltip(whole ? `Expand the list${said ? ` · ${said}` : ""}` : "Collapse the whole list")
       .on_click((_e, cx) => { cx.stop_propagation(); setFolded(!whole); })
       .child(div().text_size(11.5).font_medium().child("Agents"))
       .child(svg(chrome(whole ? "chevron-right" : "chevron-down")).size(11).flex_none())
@@ -796,9 +796,9 @@ export default class Agents extends View {
             .on_mouse_down("right", (e) => this.menuAt(e, { of: "header" }, headerMenuHeight()))
             .child(headTitle)
             .child(h_flex().flex_none().gap(2).items_center()
-              .child(btn("ag-kanban", "Vue kanban de tous les agents", icon("square-kanban"), () => openView("kanban", {})))
+              .child(btn("ag-kanban", "Kanban view of all agents", icon("square-kanban"), () => openView("kanban", {})))
               .when(!whole, (el) => el.child(btn("ag-sort", `Sort agents: ${sort.label}`, chrome(sort.icon), (p) => openView("sort", {}, above(p.x - 180, p.y, 220, listHeight(2, 1)), listHeight(2, 1)))))
-              .child(btn("ag-menu", "Options de la liste", icon("menu"), (p) => openView("menu", { of: "header" }, above(p.x - 240, p.y, 268, headerMenuHeight()), headerMenuHeight())))),
+              .child(btn("ag-menu", "List options", icon("menu"), (p) => openView("menu", { of: "header" }, above(p.x - 240, p.y, 268, headerMenuHeight()), headerMenuHeight())))),
           headTarget, false), headTarget, t)),
       )
       .when(list.length === 0 && roots.length === 0 && ranges.length === 0 && !collapsed && !whole, (el) =>

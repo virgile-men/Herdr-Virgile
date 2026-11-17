@@ -130,7 +130,7 @@ export function addGroup(d, { name, icon = "folder", color = null, parent = null
   d = normalize(d);
   if (parent && (!d.groups[parent] || depthOf(d, parent) >= MAX_DEPTH)) return [d, null];
   const gid = newId("g", d.groups);
-  d.groups[gid] = { name: String(name ?? "").trim() || "Groupe", icon, color: parent ? null : (hex(color) ?? PALETTE[6]), parent, folded: false };
+  d.groups[gid] = { name: String(name ?? "").trim() || "Group", icon, color: parent ? null : (hex(color) ?? PALETTE[6]), parent, folded: false };
   d.children[gid] = [];
   insert(d, parent, ref("g", gid), { before, after });
   return [d, gid];
@@ -152,7 +152,7 @@ export function setFolded(d, gid, folded) {
   return d;
 }
 
-// Dégrouper : son contenu prend sa place dans son parent (à la racine, ses spaces retournent sous leur machine).
+// Ungroup : son contenu prend sa place dans son parent (à la racine, ses spaces retournent sous leur machine).
 export function removeGroup(d, gid) {
   d = normalize(d);
   const g = d.groups[gid];

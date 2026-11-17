@@ -2,9 +2,9 @@
 // mod en overlay, avec props { view, ... } (main.js choisit la classe d'après view).
 //   menu      { of: "agent" | "group" | "header", id }   le clic droit, et le ☰ de l'en-tête
 //   sort      {}                                         l'icône de tri : Priority / Grouped by space
-//   move      { agent }                                  Déplacer vers un groupe
-//   group     { id? | parent? | withAgent? }             Nouveau groupe / Modifier le groupe
-//   auto      {}                                         Ranger automatiquement : jamais, ou après N jours au repos
+//   move      { agent }                                  Move to a group
+//   group     { id? | parent? | withAgent? }             New group / Edit group
+//   auto      {}                                         Auto-settle : Never, ou après N jours au repos
 //   kanban    {}                                         la vue kanban (kanban.js)
 // Les petites pièces (boutons, champs, couleurs, icônes, listes au clavier) sont copiées de
 // mods/spaces-virgile/vues.js.
@@ -43,7 +43,7 @@ function colorPicker(t, id, color, hexState, hexFocused, onPick) {
     .child(h_flex().gap(8).items_center()
       .child(div().size(24).rounded(6).flex_none().bg(color ?? t.dim).border_1().border_color(t.border))
       .child(field(t, hexState, hexFocused, Boolean(hexState.value().trim()) && !valid).w(120))
-      .child(div().text_size(11.5).text_color(t.dim).child("Couleur libre : #rrggbb")));
+      .child(div().text_size(11.5).text_color(t.dim).child("Custom color: #rrggbb")));
 }
 
 // La grille des icônes ; `initial` : une première case pour l'initiale (null).
@@ -55,7 +55,7 @@ function iconGrid(t, id, selected, color, onPick, initial = null) {
   return v_flex().flex_none().gap(2).children(rows.map((line) => h_flex().gap(2).children(line.map((name) => {
     const on = name === selected;
     return div().id(`${id}-${name ?? "initiale"}`).size(34).flex_none().rounded(7).flex().items_center().justify_center().cursor_pointer()
-      .tooltip(name ?? "Initiale")
+      .tooltip(name ?? "Initial")
       .when(on, (el) => el.bg(t.selected).border_1().border_color(color))
       .when(!on, (el) => el.hover((s) => s.bg(t.hover)))
       .on_click((_e, cx) => { onPick(name); cx.notify(); })
@@ -99,7 +99,8 @@ class ListPopup {
     const t = theme();
     const list = this.items();
     const usable = list.map((it, i) => (it.disabled || it.title ? -1 : i)).filter((i) => i !== -1);
-    return v_flex().id("av-list").track_focus(this.handle).w_full().min_h(0).p(5).bg(t.popover).text_size(12.8)
+    // Herdr dessine le cadre du popup (bordure arrondie de 6 px) sans couper ce qu'il contient : le fond est arrondi à 5 px.
+    return v_flex().id("av-list").track_focus(this.handle).w_full().min_h(0).p(5).rounded(5).bg(t.popover).text_size(12.8)
       .on_key_down((e, cx) => {
         const k = usable.indexOf(this.at);
         if (e.key === "down") this.at = usable[(k + 1) % usable.length] ?? -1;
@@ -123,14 +124,14 @@ export class MenuView extends ListPopup {
     const id = this.p.id;
     if (this.p.of === "group") {
       const g = d.groups[id];
-      if (!g) return [{ title: "Ce groupe n'existe plus" }];
+      if (!g) return [{ title: "This group no longer exists" }];
       const deep = A.depthOf(d, id) >= A.MAX_DEPTH;
       return [
-        { label: "Nouveau sous-groupe…", icon: chrome("folder-plus"), disabled: deep, hint: deep ? "8 niveaux" : "", act: () => openView("group", { parent: id }) },
-        { label: "Modifier le groupe…", icon: chrome("square-pen"), act: () => openView("group", { id }) },
-        { label: g.folded ? "Déplier" : "Replier", icon: chrome(g.folded ? "chevron-down" : "chevron-right"), act: () => save(A.setFolded(d, id, !g.folded)) },
-        ...(g.parent ? [{ label: "Remonter d'un niveau", icon: chrome("chevron-left"), act: () => save(A.moveGroup(d, id, { into: d.groups[g.parent]?.parent ?? null, after: A.ref("g", g.parent) })) }] : []),
-        { label: "Dégrouper", icon: chrome("x"), sep: true, danger: true, act: () => save(A.removeGroup(d, id)) },
+        { label: "New subgroup…", icon: chrome("folder-plus"), disabled: deep, hint: deep ? "8 levels max" : "", act: () => openView("group", { parent: id }) },
+        { label: "Edit group…", icon: chrome("square-pen"), act: () => openView("group", { id }) },
+        { label: g.folded ? "Expand" : "Collapse", icon: chrome(g.folded ? "chevron-down" : "chevron-right"), act: () => save(A.setFolded(d, id, !g.folded)) },
+        ...(g.parent ? [{ label: "Move up one level", icon: chrome("chevron-left"), act: () => save(A.moveGroup(d, id, { into: d.groups[g.parent]?.parent ?? null, after: A.ref("g", g.parent) })) }] : []),
+        { label: "Ungroup", icon: chrome("x"), sep: true, danger: true, act: () => save(A.removeGroup(d, id)) },
       ];
     }
     if (this.p.of === "header") {
@@ -139,35 +140,35 @@ export class MenuView extends ListPopup {
       // Autant de lignes que etat.js headerMenuHeight en compte.
       const whole = isFolded();
       return [
-        { label: "Vue kanban", icon: icon("square-kanban"), act: () => openView("kanban", {}) },
-        { label: "Ranger automatiquement…", icon: chrome("archive"), hint: autoDays() ? `après ${autoDays()} j` : "jamais", act: () => openView("auto", {}, null, listHeight(AUTO_DAYS.length, 1)) },
-        { label: whole ? "Déplier la liste" : "Replier la liste", icon: icon(whole ? "chevrons-up-down" : "chevrons-down-up"), hint: whole ? "" : "en-tête seul", act: () => setFolded(!whole) },
-        { title: "Trier les agents hors groupe" },
-        ...SORTS.map((s) => ({ label: s.label === "Priority" ? "Par priorité" : "Par space", icon: chrome(s.icon), hint: s.id === on ? "\u2713" : "", act: () => setSort(s.id) })),
-        { label: "Nouveau groupe…", icon: chrome("folder-plus"), sep: true, act: () => openView("group", {}) },
+        { label: "Kanban view", icon: icon("square-kanban"), act: () => openView("kanban", {}) },
+        { label: "Auto-settle…", icon: chrome("archive"), hint: autoDays() ? `after ${autoDays()} day${autoDays() === 1 ? "" : "s"}` : "never", act: () => openView("auto", {}, null, listHeight(AUTO_DAYS.length, 1)) },
+        { label: whole ? "Expand the list" : "Collapse the list", icon: icon(whole ? "chevrons-up-down" : "chevrons-down-up"), hint: whole ? "" : "header only", act: () => setFolded(!whole) },
+        { title: "Sort ungrouped agents" },
+        ...SORTS.map((s) => ({ label: s.label === "Priority" ? "By priority" : "By space", icon: chrome(s.icon), hint: s.id === on ? "\u2713" : "", act: () => setSort(s.id) })),
+        { label: "New group…", icon: chrome("folder-plus"), sep: true, act: () => openView("group", {}) },
         ...(all.length ? [
-          { label: "Replier les groupes", icon: chrome("chevron-right"), act: () => { const x = data(); for (const g of Object.values(x.groups)) g.folded = true; save(x); } },
-          { label: "Déplier les groupes", icon: chrome("chevron-down"), act: () => { const x = data(); for (const g of Object.values(x.groups)) g.folded = false; save(x); } },
+          { label: "Collapse all groups", icon: chrome("chevron-right"), act: () => { const x = data(); for (const g of Object.values(x.groups)) g.folded = true; save(x); } },
+          { label: "Expand all groups", icon: chrome("chevron-down"), act: () => { const x = data(); for (const g of Object.values(x.groups)) g.folded = false; save(x); } },
         ] : []),
       ];
     }
     const a = allAgents().find((x) => x.address === id);
     const k = terminals().find((x) => x.address === id && x.state === "live");
-    if (!a && !k) return [{ title: "Cet agent n'existe plus" }];
+    if (!a && !k) return [{ title: "This agent no longer exists" }];
     const pinned = Boolean(k?.labels?.["herdr.pinned"]);
     const grouped = A.groupOfAgent(d, id);
     return [
-      ...(a ? [{ label: "Ouvrir", icon: chrome("terminal"), act: () => run(...openArgs(a)) }] : []),
-      { label: "Aperçu du terminal", icon: icon("eye"), act: () => run("terminal.peek", { terminal: id }) },
-      { label: pinned ? "Désépingler" : "Épingler en haut", icon: icon(pinned ? "pin-off" : "pin"), act: () => run("terminal.pin", { terminal: id, pinned: !pinned }) },
-      // Ranger son onglet (tab.settle : tout l'onglet, il tourne toujours), ou l'en sortir.
+      ...(a ? [{ label: "Open", icon: chrome("terminal"), act: () => run(...openArgs(a)) }] : []),
+      { label: "Peek at the terminal", icon: icon("eye"), act: () => run("terminal.peek", { terminal: id }) },
+      { label: pinned ? "Unpin" : "Pin to the top", icon: icon(pinned ? "pin-off" : "pin"), act: () => run("terminal.pin", { terminal: id, pinned: !pinned }) },
+      // Settle its tab (tab.settle : tout l'onglet, il tourne toujours), ou l'en sortir.
       a?.tab
-        ? { label: a.settled ? "Sortir des rangés" : "Ranger son onglet", icon: icon(a.settled ? "archive-restore" : "archive"), act: () => run(...settleArgs(a, !a.settled)) }
-        : { label: "Ranger son onglet", icon: icon("archive"), disabled: true, hint: "sans onglet" },
-      { label: "Déplacer vers un groupe…", icon: icon("folder-open"), sep: true, act: () => openView("move", { agent: id }) },
-      { label: "Nouveau groupe avec cet agent…", icon: chrome("folder-plus"), act: () => openView("group", { withAgent: id }) },
-      ...(grouped ? [{ label: "Retirer du groupe", icon: chrome("minus"), act: () => save(A.moveAgent(d, id, { into: null })) }] : []),
-      { label: "Vue kanban", icon: icon("square-kanban"), sep: true, act: () => openView("kanban", { focus: id }) },
+        ? { label: a.settled ? "Unsettle" : "Settle its tab", icon: icon(a.settled ? "archive-restore" : "archive"), act: () => run(...settleArgs(a, !a.settled)) }
+        : { label: "Settle its tab", icon: icon("archive"), disabled: true, hint: "no tab" },
+      { label: "Move to a group…", icon: icon("folder-open"), sep: true, act: () => openView("move", { agent: id }) },
+      { label: "New group with this agent…", icon: chrome("folder-plus"), act: () => openView("group", { withAgent: id }) },
+      ...(grouped ? [{ label: "Remove from group", icon: chrome("minus"), act: () => save(A.moveAgent(d, id, { into: null })) }] : []),
+      { label: "Kanban view", icon: icon("square-kanban"), sep: true, act: () => openView("kanban", { focus: id }) },
     ];
   }
 }
@@ -185,8 +186,8 @@ export class MoveView extends ListPopup {
     const d = data();
     const id = this.p.agent;
     const now = A.groupOfAgent(d, id);
-    const out = [{ title: "Déplacer vers…" },
-      { label: "Aucun groupe", icon: now ? chrome("minus") : chrome("check"), act: () => save(A.moveAgent(data(), id, { into: null })) }];
+    const out = [{ title: "Move to…" },
+      { label: "No group", icon: now ? chrome("minus") : chrome("check"), act: () => save(A.moveAgent(data(), id, { into: null })) }];
     const walk = (gid, depth) => {
       const g = d.groups[gid];
       if (!g) return;
@@ -195,12 +196,12 @@ export class MoveView extends ListPopup {
       for (const r of d.children[gid] ?? []) { const k = A.unref(r); if (k.kind === "g") walk(k.id, depth + 1); }
     };
     for (const r of d.children.root) walk(A.unref(r).id, 0);
-    out.push({ label: "Nouveau groupe…", icon: chrome("folder-plus"), sep: true, act: () => openView("group", { withAgent: id }) });
+    out.push({ label: "New group…", icon: chrome("folder-plus"), sep: true, act: () => openView("group", { withAgent: id }) });
     return out;
   }
 }
 
-// Nouveau groupe / Modifier le groupe : nom, icône, et couleur pour un groupe racine
+// New group / Edit group : nom, icône, et couleur pour un groupe racine
 // (un sous-groupe prend celle de son groupe racine).
 export class GroupView {
   init(cx) {
@@ -213,7 +214,7 @@ export class GroupView {
     this.color = g?.color ?? A.PALETTE[(Object.keys(d.groups).length * 5 + 6) % A.PALETTE.length];
     this.error = "";
     const value = g?.name ?? "";
-    this.name = InputState.new({ placeholder: "Nom du groupe", value });
+    this.name = InputState.new({ placeholder: "Group name", value });
     this.hexIn = InputState.new({ placeholder: "#3e63dd", value: this.color });
     this.name.on("submit", (_e, cx) => { this.save(); cx.notify(); });
     this.name.on("change", (_e, cx) => { if (this.error) { this.error = ""; cx.notify(); } });
@@ -232,7 +233,7 @@ export class GroupView {
 
   save() {
     const name = this.name.value().trim();
-    if (!name) { this.error = "Il faut un nom."; return; }
+    if (!name) { this.error = "A name is required."; return; }
     const color = A.hex(this.hexIn.value()) ?? this.color;
     let d = data();
     if (this.g) {
@@ -244,7 +245,7 @@ export class GroupView {
       const after = this.p.withAgent && parent ? A.ref("s", this.p.withAgent) : null;
       let gid;
       [d, gid] = A.addGroup(d, { name, icon: this.icon, color, parent, after });
-      if (!gid) { this.error = "Pas plus de 8 niveaux."; return; }
+      if (!gid) { this.error = "No more than 8 levels."; return; }
       if (parent) d = A.setFolded(d, parent, false);
       if (this.p.withAgent) d = A.moveAgent(d, this.p.withAgent, { into: gid });
     }
@@ -259,42 +260,42 @@ export class GroupView {
     const parent = this.p.withAgent ? A.groupOfAgent(d, this.p.withAgent) : this.parent;
     const inherited = parent ? A.colorOf(d, parent) : null;
     const shown = inherited ?? this.color;
-    return v_flex().id("av-group").track_focus(this.handle).size_full().min_h(0).p(18).bg(t.popover).text_size(12.8).text_color(t.foreground)
+    return v_flex().id("av-group").track_focus(this.handle).size_full().min_h(0).p(18).rounded(5).bg(t.popover).text_size(12.8).text_color(t.foreground)
       .on_key_down((e, cx) => { if (e.key === "escape") { close(); cx.stop_propagation(); } })
       .child(h_flex().flex_none().items_center()
-        .child(div().flex_1().text_size(15).font_semibold().child(this.g ? "Modifier le groupe" : parent ? "Nouveau sous-groupe" : "Nouveau groupe"))
+        .child(div().flex_1().text_size(15).font_semibold().child(this.g ? "Edit group" : parent ? "New subgroup" : "New group"))
         .child(div().text_size(11).text_color(t.dim).child("Esc")))
       .child(div().flex_none().h(14))
-      .child(label(t, "Nom"))
+      .child(label(t, "Name"))
       .child(h_flex().flex_none().gap(8).items_center()
         .child(h_flex().size(34).flex_none().rounded(8).border_1().border_color(t.input).bg(t.background).items_center().justify_center()
           .child(svg(icon(this.icon)).size(17).text_color(shown)))
         .child(field(t, this.name, this.nameFocused, Boolean(this.error)).flex_1()))
       .child(div().flex_none().h(14))
-      .child(label(t, "Icône"))
+      .child(label(t, "Icon"))
       .child(iconGrid(t, "ic", this.icon, shown, (name) => { this.icon = name; }))
       .child(div().flex_none().h(14))
-      .child(label(t, "Couleur"))
+      .child(label(t, "Color"))
       .child(inherited
         ? h_flex().flex_none().gap(8).items_center()
           .child(div().size(24).rounded(12).flex_none().bg(inherited))
-          .child(div().text_size(12).text_color(t.dim).child(`Héritée de « ${d.groups[A.rootOf(d, parent)]?.name ?? ""} » (les sous-groupes prennent la couleur de leur groupe racine).`))
+          .child(div().text_size(12).text_color(t.dim).child(`Inherited from "${d.groups[A.rootOf(d, parent)]?.name ?? ""}" (subgroups take the color of their root group).`))
         : colorPicker(t, "gr", this.color, this.hexIn, this.hexFocused, (c) => { this.color = c; this.hexIn.set_value(c); }))
       .child(div().flex_1())
       .child(h_flex().flex_none().pt(16).gap(8).items_center()
         .child(div().flex_1().text_size(11.5).text_color(t.blocked).child(this.error))
-        .child(button(t, "gr-cancel", "Annuler", false, close))
-        .child(button(t, "gr-save", this.g ? "Enregistrer" : "Créer", true, (_e, cx) => { this.save(); cx.notify(); })));
+        .child(button(t, "gr-cancel", "Cancel", false, close))
+        .child(button(t, "gr-save", this.g ? "Save" : "Create", true, (_e, cx) => { this.save(); cx.notify(); })));
   }
 }
 
 
-// Ranger automatiquement les onglets dont les agents sont au repos depuis N jours (etat.js AUTO_DAYS).
+// Auto-settle : ranger les onglets dont les agents sont au repos depuis N jours (etat.js AUTO_DAYS).
 export class AutoView extends ListPopup {
   items() {
     const on = autoDays();
-    return [{ title: "Ranger les onglets au repos depuis…" },
-      ...AUTO_DAYS.map((v) => ({ label: v ? `${v} jour${v > 1 ? "s" : ""}` : "Jamais", icon: v ? chrome("clock") : chrome("x"), hint: v === on ? "\u2713" : "", act: () => setAutoDays(v) }))];
+    return [{ title: "Settle tabs idle for…" },
+      ...AUTO_DAYS.map((v) => ({ label: v ? `${v} day${v === 1 ? "" : "s"}` : "Never", icon: v ? chrome("clock") : chrome("x"), hint: v === on ? "\u2713" : "", act: () => setAutoDays(v) }))];
   }
 }
 
