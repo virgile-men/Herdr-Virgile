@@ -17,10 +17,11 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { spaces, machines, panes, terminals, run, exec, hc, theme, shared, setShared, watchFolder, window, layout, props, nextCommand } from "herdr";
+import { spaces, machines, panes, terminals, run, exec, hc, theme, shared, setShared, watchFolder, window, layout, props, nextCommand, notify } from "herdr";
 import * as A from "./arbre.js";
-import { data, save, PENDING, OPTIONS, rectOf, openView, icon, chrome, avatar, tabTitle, tabTerminals } from "./etat.js";
+import { data, save, PENDING, OPTIONS, MOVE_TAB, rectOf, openView, icon, chrome, avatar, tabTitle, tabTerminals } from "./etat.js";
 import { VIEWS } from "./vues.js";
+import { moveTab, targetsFor } from "./deplacer.js";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -36,10 +37,27 @@ const narrow = () => (find(layout(), "sidebar")?.size?.px ?? Infinity) < 160;
 
 // Where a space is now: its first terminal's live folder, else where it was made.
 // `ps`: panes(), read once by the caller (each read copies every pane).
-function place(s, ps) {
-  const tabs = new Set((s.tabs ?? []).map((c) => c.id));
-  return ps.find((p) => tabs.has(p.tab) && p.cwd)?.cwd || s.folder;
+// Onglet par onglet : un onglet en Trace n'a pas de volet de terminal (son agent est parqué derrière le
+// volet de chat, étiqueté herdr.chat=<volet>) ; c'est alors le dossier de cet agent. Sans ça, un space
+// dont les premiers onglets sont en Trace prenait le dossier d'un onglet plus loin (2026-11-16).
+const shortId = (x) => String(x ?? "").split("/").pop();
+let termsAt = 0, termsMemo = [];
+const termsNow = () => (Date.now() - termsAt < 100 ? termsMemo : ((termsAt = Date.now()), (termsMemo = terminals())));
+// Le dossier d'un onglet : celui de son premier volet de terminal, sinon de l'agent caché derrière son volet de chat.
+function tabPlace(c, ps) {
+  const p = ps.find((p) => p.tab === c.id && p.cwd);
+  if (p) return p.cwd;
+  const chat = ps.find((p) => p.tab === c.id && p.mod === "chat");
+  if (!chat) return null;
+  const k = termsNow().find((k) => k.state === "live" && shortId(k.labels?.["herdr.chat"]) === shortId(chat.pane));
+  return k?.cwd ?? k?.foreground?.cwd ?? null;
 }
+function place(s, ps) {
+  for (const c of s.tabs ?? []) { const cwd = tabPlace(c, ps); if (cwd) return cwd; }
+  return s.folder;
+}
+// La clé git d'un onglet (comme where() pour un space) : sa branche s'affiche sur sa ligne (2026-11-16).
+const tabWhere = (s, c, ps) => { const cwd = tabPlace(c, ps); return cwd ? JSON.stringify([s.machine ?? null, cwd]) : null; };
 const rowHeight = ({ tree }) => (tree ? 28 : 30);
 const where = (s, ps) => JSON.stringify([s.machine ?? null, place(s, ps)]);
 const base = (path) => path.replace(/\/+$/, "").split("/").pop();
@@ -85,7 +103,8 @@ export default class Spaces extends View {
     // worktree appears under its repo instead of jumping there.
     this.shown = new Set(spaces().map((s) => s.id));
     this.born = {};
-    this.pressed = null; // { kind: "s" | "g", id } : ce qu'on tient
+    this.pressed = null; // { kind: "s" | "g" | "t" (un onglet), id } : ce qu'on tient
+    this.moving = null; // l'onglet en cours de déplacement vers un autre space
     this.over = null; // { kind: "s" | "g" | "m" | "h", id, pos } : où ça tomberait
     this.missing = {}; // space -> depuis quand il n'est plus là
     this.open = new Set(JSON.parse(localStorage.getItem("spaces.open") ?? "[]")); // spaces dépliés (leurs onglets)
@@ -117,6 +136,29 @@ export default class Spaces extends View {
         else if (c === "menu-header") openView("menu", { of: "header" }, at);
         else if (c === "menu-tab") openView("menu", { of: "tab", id: (s?.tabs ?? []).find((x) => x.active)?.id }, at);
         else if (c === "look") openView("look", { space: s?.id });
+        else if (c === "move-tab") openView("movetab", { tab: (s?.tabs ?? []).find((x) => x.active)?.id }, at);
+        // Les spaces hors groupe de même nom sur plusieurs machines : un groupe de ce nom chacun.
+        else if (c === "group-homonyms") save(A.groupHomonyms(data(), sp));
+        // Pour essayer la place des groupes : le premier groupe racine tout en bas, ou de nouveau en haut.
+        else if ((c === "group-bottom" || c === "group-top") && g) {
+          const loose = this.loose ?? [];
+          save(c === "group-top" || !loose.length ? A.placeAfter(data(), g, []) : A.placeRootGroup(data(), g, loose, { after: loose[loose.length - 1] }));
+        }
+        // Le dialogue « Grouper ces deux spaces » sur les deux premiers spaces hors groupe de machines différentes (pour essayer).
+        else if (c === "pair") {
+          const d = data(), free = sp.filter((x) => !A.groupOfSpace(d, x.id));
+          const a = free[0], b = free.find((x) => (x.machine ?? null) !== (a?.machine ?? null));
+          if (a && b) openView("group", { withSpaces: [a.id, b.id], name: a.name === b.name ? a.name : "" });
+        }
+        // L'onglet affiché vers le space suivant ou précédent de sa machine (raccourci possible dans keys.json).
+        else if (c === "move-tab-next" || c === "move-tab-prev") {
+          const tab = (s?.tabs ?? []).find((x) => x.active);
+          const same = sp.filter((x) => (x.machine ?? null) === (s?.machine ?? null));
+          const dest = same[same.findIndex((x) => x.id === s?.id) + (c === "move-tab-next" ? 1 : -1)];
+          if (tab && dest) this.startMoveTab(cx, tab.id, dest.id);
+        }
+        // Un déplacement d'onglet choisi dans un overlay (MoveTabView) : fait ici, la barre reste.
+        else if (c === "movetab") { const m = shared(MOVE_TAB); if (m?.tab && m?.to && Date.now() - (m.at ?? 0) < 10000) this.startMoveTab(cx, m.tab, m.to); }
         cx.notify();
       }
     });
@@ -196,7 +238,11 @@ export default class Spaces extends View {
   due(now, sp, ps) {
     // Moved there: what it knew of that place may be old.
     const at = {};
-    for (const s of sp) at[s.id] = where(s, ps);
+    for (const s of sp) {
+      at[s.id] = where(s, ps);
+      // Chaque onglet aussi : sa branche est montrée sur sa ligne.
+      for (const c of s.tabs ?? []) { const k = tabWhere(s, c, ps); if (k) at[`tab:${c.id}`] = k; }
+    }
     const keys = new Set(Object.values(at).filter((k) => JSON.parse(k)[1]));
     const due = new Set([...keys].filter((k) => !(k in this.git)));
     for (const [id, k] of Object.entries(at)) if (this.at[id] && this.at[id] !== k && keys.has(k)) due.add(k);
@@ -207,7 +253,7 @@ export default class Spaces extends View {
     for (const p of ps) {
       if (!p.terminal || !spaceOf[p.tab]) continue;
       busy[p.pane] = p.status === "working" || !(p.program?.shell || p.program?.agent);
-      if (this.busy[p.pane] && !busy[p.pane]) this.sameRepo(at[spaceOf[p.tab].id], keys).forEach((k) => due.add(k));
+      if (this.busy[p.pane] && !busy[p.pane]) [at[spaceOf[p.tab].id], at[`tab:${p.tab}`]].filter(Boolean).forEach((key) => this.sameRepo(key, keys).forEach((k) => due.add(k)));
     }
     this.busy = busy;
     for (const m of machines()) {
@@ -410,6 +456,9 @@ export default class Spaces extends View {
     const y = e.local_position?.y ?? 0;
     const h = e.bounds?.height || 1;
     let pos = "into";
+    if (from.kind === "t") return target.kind === "s" && this.valid(from, target, pos) ? { kind: "s", id: target.id, pos } : null;
+    // Deux spaces hors groupe de machines différentes : lâcher l'un sur l'autre propose de les grouper.
+    if (this.pairable(from, target)) return { kind: "s", id: target.id, pos: "into" };
     if (target.kind === "s") pos = target.ctx.kid ? "after" : y < h / 2 ? "before" : "after";
     else if (target.kind === "g" && from.kind === "g" && !target.ctx?.empty) pos = y < h * 0.28 ? "before" : y > h * 0.72 ? "after" : "into";
     // Un space sur l'en-tête d'un sous-groupe : en haut, il se range au-dessus de lui dans le
@@ -421,8 +470,19 @@ export default class Spaces extends View {
     return this.valid(from, target, pos) ? { kind: target.kind, id: target.id, pos } : null;
   }
 
+  // Un space hors groupe sur un space hors groupe d'une autre machine (pas un worktree montré sous son dépôt).
+  pairable(from, target) {
+    if (from.kind !== "s" || target.kind !== "s" || target.ctx?.group || target.ctx?.kid || from.id === target.id) return false;
+    const d = data();
+    if (A.groupOfSpace(d, from.id) || A.groupOfSpace(d, target.id)) return false;
+    const s = spaces().find((x) => x.id === from.id);
+    return Boolean(s) && (s.machine ?? null) !== (target.ctx?.machine ?? null);
+  }
+
   valid(from, target, pos) {
     const d = data();
+    // Un onglet : vers un autre space de sa machine (deplacer.js).
+    if (from.kind === "t") return target.kind === "s" && !this.moving && targetsFor(from.id).some((s) => s.id === target.id);
     if (from.kind === "s") {
       const mine = A.groupOfSpace(d, from.id);
       if (target.kind === "s") {
@@ -438,13 +498,21 @@ export default class Spaces extends View {
         if (target.id === from.id) return false;
         return pos === "into" ? A.canNest(d, from.id, target.id) : A.canNest(d, from.id, d.groups[target.id]?.parent ?? null);
       }
+      // Sur un space hors groupe : le groupe passe à la racine, juste avant ou après lui (liste sans tri par machine).
+      if (target.kind === "s" && !target.ctx.group) return !target.ctx.kid && !shared(OPTIONS)?.byMachine && (this.loose ?? []).includes(target.id);
       if (target.kind === "s") return Boolean(target.ctx.group) && A.canNest(d, from.id, target.ctx.group);
       return Boolean(d.groups[from.id]?.parent);
     }
     return false;
   }
 
-  apply(from, target, pos) {
+  apply(from, target, pos, cx) {
+    if (from.kind === "t") { if (target.kind === "s") this.startMoveTab(cx, from.id, target.id); return; }
+    if (pos === "into" && this.pairable(from, target)) {
+      const sp = spaces(), a = sp.find((x) => x.id === target.id), b = sp.find((x) => x.id === from.id);
+      openView("group", { withSpaces: [target.id, from.id], name: a && b && a.name === b.name ? a.name : "" });
+      return;
+    }
     let d = data();
     const side = pos === "before" ? "before" : "after";
     if (from.kind === "s") {
@@ -464,7 +532,10 @@ export default class Spaces extends View {
       d = pos === "into"
         ? A.setFolded(A.moveGroup(d, from.id, { into: target.id }), target.id, false)
         : A.moveGroup(d, from.id, { into: d.groups[target.id]?.parent ?? null, [side]: A.ref("g", target.id) });
-    } else if (target.kind === "s") d = A.moveGroup(d, from.id, { into: target.ctx.group, [side]: target.ctx.anchor });
+      // À côté d'un groupe racine : à la même place que lui parmi les spaces.
+      if (pos !== "into" && !d.groups[target.id]?.parent) d = A.placeAfter(d, from.id, d.after[target.id] ?? []);
+    } else if (target.kind === "s" && !target.ctx.group) d = A.placeRootGroup(d, from.id, this.loose ?? [], { [side]: target.id });
+    else if (target.kind === "s") d = A.moveGroup(d, from.id, { into: target.ctx.group, [side]: target.ctx.anchor });
     else d = A.moveGroup(d, from.id, { into: null });
     save(d);
   }
@@ -481,7 +552,7 @@ export default class Spaces extends View {
     this.over = null;
     if (from) {
       if (from.kind === target.kind && from.id === target.id) this.click(target);
-      else if (over && over.kind === target.kind && over.id === target.id) this.apply(from, target, over.pos);
+      else if (over && over.kind === target.kind && over.id === target.id) this.apply(from, target, over.pos, cx);
     }
     cx.notify();
   }
@@ -499,6 +570,27 @@ export default class Spaces extends View {
         if (!sameAim(over, this.over)) { this.over = over; cx.notify(); }
       })
       .on_mouse_up("left", (_e, cx) => this.drop(target, cx));
+  }
+
+  // Déplace un onglet vers un autre space (deplacer.js). Ses étiquettes le suivent (elles sont
+  // rangées par id d'onglet, et il en change), et le space cible se déplie pour le montrer.
+  startMoveTab(cx, tabId, toId) {
+    if (this.moving) return;
+    this.moving = tabId;
+    cx.notify();
+    cx.spawn(async (cx) => {
+      let r;
+      try { r = await moveTab(cx, tabId, toId); } catch (e) { r = { error: String(e?.message ?? e) }; }
+      this.moving = null;
+      if (r.id && r.id !== tabId) {
+        const d = data();
+        if (d.tags[tabId]) { d.tags[r.id] = d.tags[tabId]; delete d.tags[tabId]; save(d); }
+        this.open.add(toId);
+        localStorage.setItem("spaces.open", JSON.stringify([...this.open]));
+      }
+      if (r.error) notify({ title: "Déplacer l'onglet", body: r.error, level: r.id ? "warning" : "error" });
+      cx.notify();
+    });
   }
 
   // Le trait qui montre où ça tombe, et l'aspect de la ligne tenue.
@@ -595,15 +687,38 @@ export default class Spaces extends View {
     for (const [k, list] of Object.entries(d.children)) if (k !== "root") for (const r of list) if (r.startsWith("s:")) explicit.add(r.slice(2));
     const placed = this.placedIn(d, kids, explicit, live);
     const ctx = { live, kids, explicit };
-    const groups = d.children.root.map(A.unref).filter((x) => x.kind === "g" && d.groups[x.id]).map((x) => this.groupBlock(d, x.id, ctx, t));
     const rest = rows.filter((r) => !placed.has(r.w.id));
-    return [...groups, ...(groups.length ? [div().h(6).flex_none()] : []), ...(byMachine ? this.machineSections(rest, t, false, placed) : this.flat(rest, t, groups.length > 0))];
+    if (byMachine) {
+      // Trié par machine : les groupes en haut, puis une section par machine (leur place parmi les spaces ne joue pas).
+      this.loose = [];
+      const groups = d.children.root.map(A.unref).filter((x) => x.kind === "g" && d.groups[x.id]).map((x) => this.groupBlock(d, x.id, ctx, t));
+      return [...groups, ...(groups.length ? [div().h(6).flex_none()] : []), ...this.machineSections(rest, t, false, placed)];
+    }
+    // Sans tri : les groupes racine à leur place parmi les spaces hors groupe (after), en haut par défaut.
+    const seg = new Map();
+    let cur = null;
+    for (const r of rest) {
+      if (!r.tree || !cur) { cur = r.w.id; seg.set(cur, [r]); } else seg.get(cur).push(r);
+    }
+    this.loose = [...seg.keys()];
+    const order = A.interleave(d, this.loose);
+    const hasGroups = order.some((x) => x.kind === "g");
+    const out = [];
+    order.forEach((x, i) => {
+      if (x.kind === "g") {
+        if (i > 0 && order[i - 1].kind === "s") out.push(div().h(4).flex_none());
+        out.push(this.groupBlock(d, x.id, ctx, t));
+        if (order[i + 1]?.kind === "s") out.push(div().h(6).flex_none());
+      } else out.push(...this.flat(seg.get(x.id), t, true, false));
+    });
+    return [...out, ...this.flat([], t, hasGroups || out.length > 0)];
   }
 
   // Sans tri par machine : les spaces hors groupe en une liste, dans l'ordre de Herdr (cet ordinateur,
   // puis les machines par nom) ; chaque terminal dit sa machine. Une machine qui charge le dit en bas.
-  flat(rows, t, hasGroups) {
+  flat(rows, t, hasGroups, tail = true) {
     const out = rows.map((r) => this.row(r, t, { group: null, anchor: null, machine: r.w.machine ?? null, kid: Boolean(r.tree) }, false));
+    if (!tail) return out;
     const loading = machines().filter((m) => m.name && m.layout === "loading").map((m) => m.name);
     if (loading.length) out.push(div().id("machines-loading").h(26).flex_none().px(8).flex().items_center().text_size(11.5).text_color(t.dim)
       .child(`Chargement : ${loading.join(", ")}…`));
@@ -667,6 +782,20 @@ export default class Spaces extends View {
     });
   }
 
+  // La branche d'un onglet, après son nom : « ⑂ spike ↑2 ↓1 ». main et master ne s'affichent pas (presque
+  // tout est dessus) ; l'avance et le retard, toujours. Rien hors d'un dépôt git.
+  branchTail(g, t, id) {
+    if (!g) return [];
+    const raw = g.branch ?? "detached";
+    const branch = raw === "main" || raw === "master" ? "" : raw;
+    if (!branch && !(g.ahead > 0) && !(g.behind > 0)) return [];
+    return [h_flex().id(id).flex_shrink(1).min_w(0).gap(4).items_center().text_size(11).text_color(t.dim)
+      .tooltip([g.name && `Dépôt ${g.name}`, `Branche ${raw}`, g.ahead > 0 && `${g.ahead} commit(s) en avance`, g.behind > 0 && `${g.behind} en retard`].filter(Boolean).join(" · "))
+      .when(Boolean(branch), (el) => el.child(svg(chrome("git-branch")).size(10).flex_none()).child(div().min_w(0).truncate().child(branch)))
+      .when(g.ahead > 0, (el) => el.child(div().flex_none().text_color(t.ansi2).child(`↑${g.ahead}`)))
+      .when(g.behind > 0, (el) => el.child(div().flex_none().text_color(t.ansi1).child(`↓${g.behind}`)))];
+  }
+
   // Only what's unusual, after the name: "herdr · spike ↑2 ↓1". The repo or
   // branch goes when the name already says it (a worktree is named after its branch),
   // and master/main go: nearly every space is on one.
@@ -727,17 +856,23 @@ export default class Spaces extends View {
     const dot = c.status === "blocked" || c.status === "done" || c.status === "working";
     const terms = tabTerminals(c, this.panesNow, this.termsNow);
     const labels = A.labelsOf(d, c.id);
+    const held = this.pressed?.kind === "t" && this.pressed.id === c.id;
     return v_flex().flex_none().gap(2).relative()
+      .when(Boolean((held && this.over) || this.moving === c.id), (el) => el.opacity(0.5))
       .child(div().absolute().left(axis).w(1).top(-3).when(last, (el) => el.h(13)).when(!last, (el) => el.bottom(0)).bg(ink))
       .child(div().absolute().left(axis).top(10).h(1).w(indent - axis - 5).bg(ink))
       .child(h_flex().id(`tab-${c.id}`).h(20).flex_none().pl(indent).pr(4).gap(6).items_center().rounded(5)
         .text_size(11.5).text_color(shown ? t.foreground : t.muted)
         .hover((s) => s.bg(t.hover).text_color(t.foreground))
-        .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+        // Tenir la ligne la prend (et pas son space) : lâchée sur un autre space de la même machine,
+        // l'onglet y part (apply). Lâchée sur elle-même, c'est un clic.
+        .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); this.pressed = { kind: "t", id: c.id }; this.over = null; })
         .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); openView("menu", { of: "tab", id: c.id }); })
         // tab.select passe aussi au space de l'onglet.
         .on_click(() => run("tab.select", { id: c.id }))
-        .child(div().flex_1().min_w(0).truncate().when(shown, (el) => el.font_medium()).child(tabTitle(c, this.panesNow)))
+        // Le nom passe avant la branche : il garde jusqu'à 150 px, la branche prend le reste et se coupe.
+        .child(div().flex_shrink(0).max_w(150).truncate().when(shown, (el) => el.font_medium()).child(tabTitle(c, this.panesNow)))
+        .child(h_flex().flex_1().min_w(0).justify_end().children(this.branchTail(this.git[tabWhere(w, c, this.panesNow)], t, `tab-branch-${c.id}`)))
         .when(dot, (el) => el.child(div().size(6).rounded(3).flex_none().bg(tone(t, c.status)))))
       .child(v_flex().pl(indent).pr(4).gap(3)
         .children((terms.length ? terms : [null]).map((term) => this.machineChip(w, term, t)))
@@ -777,7 +912,8 @@ export default class Spaces extends View {
           .when(Boolean(tree), el => el.pl(22).child(svg("mods/workspace-chrome/branch.svg").size(13).text_color(t.dim)))
           .when(!tree, el => el.child(avatar(t, w, d)))
           .child(div().when(!inGroup, (el) => el.flex_shrink(0)).when(inGroup, (el) => el.flex_shrink(1).min_w(24)).max_w(150).truncate().text_color(t.foreground).child(w.name))
-          .child(g ? this.gitTail(g, tree, w.name, t) : div().flex_1())
+          // Le dépôt et la branche sont sur la ligne de chaque onglet (branchTail), plus sur le space.
+          .child(div().flex_1())
           .when(tabs.length > 1, (el) => el.child(h_flex().id(`space-open-${w.id}`).flex_none().h(18).px(3).gap(3).items_center().rounded(4)
             .text_size(11).text_color(t.dim).hover((s) => s.bg(t.hover).text_color(t.foreground))
             .tooltip(open ? "Replier les onglets" : `Montrer les ${tabs.length} onglets`)

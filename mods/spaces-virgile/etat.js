@@ -15,6 +15,9 @@ export const PENDING = "spaces-virgile.pending";
 // Les réglages de la barre (menu ☰ de l'en-tête) : { byMachine } = les spaces hors groupe sous un
 // en-tête par machine (sinon une seule liste, l'ordre de Herdr).
 export const OPTIONS = "spaces-virgile.options";
+// Un déplacement d'onglet demandé par un overlay (menu) : { tab, to, at }. La barre le fait (un overlay
+// fermé perd ses tâches) quand elle reçoit la commande spaces-virgile.movetab.
+export const MOVE_TAB = "spaces-virgile.movetab";
 
 // Où est un élément dans la fenêtre, d'après un clic dessus.
 export const rectOf = (e) => ({ x: e.position.x - (e.local_position?.x ?? 0), y: e.position.y - (e.local_position?.y ?? 0),
@@ -24,6 +27,7 @@ export const SIZES = {
   menu: { kind: "popup", width: 268, height: 380 },
   machines: { kind: "popup", width: 250, height: 380 },
   move: { kind: "popup", width: 260, height: 400 },
+  movetab: { kind: "popup", width: 280, height: 400 },
   labels: { kind: "dialog", width: 440, height: 560 },
   group: { kind: "dialog", width: 452, height: 590 },
   look: { kind: "dialog", width: 452, height: 540 },

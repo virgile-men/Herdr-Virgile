@@ -8,6 +8,8 @@
 //   groups:     { gid: { name, icon, color, parent, folded } }   parent: gid ou null (racine)
 //   children:   { root: ["g:gid"], gid: ["g:gid" | "s:spaceId"] }
 //   looks:      { spaceId: { icon, color } }   l'avatar d'un space : icône (null : son initiale), couleur
+//   after:      { gid: [spaceId] }   où se place un groupe racine parmi les spaces hors groupe : juste après le
+//               premier de ces spaces encore hors groupe (le plus proche d'abord) ; aucun : en haut (2026-11-16)
 // Un space est dans au plus un groupe ; un space hors groupe reste sous sa machine.
 // Les groupes sont un affichage : ils ne changent jamais l'ordre des spaces de herdr.
 // La couleur d'un sous-groupe est celle de son groupe racine.
@@ -47,7 +49,9 @@ export function normalize(d) {
   d.children ??= {};
   d.children.root ??= [];
   d.looks ??= {};
+  d.after ??= {};
   for (const g of Object.keys(d.groups)) d.children[g] ??= [];
+  for (const g of Object.keys(d.after)) if (!d.groups[g] || d.groups[g].parent || !Array.isArray(d.after[g]) || !d.after[g].length) delete d.after[g];
   return d;
 }
 
@@ -179,6 +183,79 @@ export function moveGroup(d, gid, { into = null, before = null, after = null } =
   // À la racine, il garde la couleur qu'il montrait ; dedans, il prend celle de son parent.
   g.color = into ? null : (g.color ?? color);
   insert(d, into, ref("g", gid), { before, after });
+  return d;
+}
+
+// Les spaces hors groupe qui portent le même nom sur des machines différentes (un space ne peut pas
+// changer de machine) : un groupe de ce nom pour chaque nom, avec eux dedans. `live` : spaces().
+export function groupHomonyms(d, live) {
+  d = normalize(d);
+  const byName = new Map();
+  for (const s of live) {
+    if (groupOfSpace(d, s.id)) continue;
+    if (!byName.has(s.name)) byName.set(s.name, []);
+    byName.get(s.name).push(s);
+  }
+  for (const [name, list] of byName) {
+    if (list.length < 2 || new Set(list.map((s) => s.machine ?? "")).size < 2) continue;
+    let gid;
+    [d, gid] = addGroup(d, { name, color: PALETTE[(Object.keys(d.groups).length * 5 + 6) % PALETTE.length] });
+    if (!gid) continue;
+    for (const s of list) d = moveSpace(d, s.id, { into: gid });
+  }
+  return d;
+}
+
+// ---- La place des groupes racine parmi les spaces hors groupe ----------------------------------
+// `loose` : les spaces hors groupe (pas les worktrees montrés sous leur dépôt), dans l'ordre affiché.
+
+// Après quel space hors groupe se montre un groupe racine : son index dans loose, -1 = en haut.
+export function slotOf(d, gid, loose) {
+  for (const s of d.after?.[gid] ?? []) { const i = loose.indexOf(s); if (i !== -1) return i; }
+  return -1;
+}
+
+// Les groupes racine et les spaces hors groupe, mêlés : [{ kind: "g" | "s", id }]. À une même place,
+// les groupes gardent leur ordre dans children.root.
+export function interleave(d, loose) {
+  d = normalize(d);
+  const at = new Map();
+  for (const r of d.children.root) {
+    const x = unref(r);
+    if (x.kind !== "g" || !d.groups[x.id]) continue;
+    const p = slotOf(d, x.id, loose);
+    if (!at.has(p)) at.set(p, []);
+    at.get(p).push(x.id);
+  }
+  const out = (at.get(-1) ?? []).map((id) => ({ kind: "g", id }));
+  loose.forEach((s, i) => { out.push({ kind: "s", id: s }); for (const g of at.get(i) ?? []) out.push({ kind: "g", id: g }); });
+  return out;
+}
+
+// Retient la place d'un groupe racine (null ou [] : en haut). Jusqu'à 8 spaces de secours.
+export function placeAfter(d, gid, list) {
+  d = normalize(d);
+  if (!d.groups[gid] || d.groups[gid].parent) return d;
+  const l = (list ?? []).filter(Boolean).slice(0, 8);
+  if (l.length) d.after[gid] = l; else delete d.after[gid];
+  return d;
+}
+
+// Un groupe lâché juste avant ou juste après un space hors groupe : il passe à la racine, à cette place.
+// « Après X » le met avant les groupes déjà là ; « avant Y », après eux (donc juste au-dessus de Y).
+export function placeRootGroup(d, gid, loose, { before = null, after = null } = {}) {
+  d = normalize(d);
+  if (!d.groups[gid]) return d;
+  const i = loose.indexOf(after ?? before);
+  if (i === -1) return d;
+  const list = after ? loose.slice(0, i + 1).reverse() : loose.slice(0, i).reverse();
+  d = moveGroup(d, gid, { into: null });
+  d = placeAfter(d, gid, list);
+  if (after) {
+    const slot = slotOf(d, gid, loose);
+    const first = d.children.root.map(unref).find((x) => x.kind === "g" && x.id !== gid && d.groups[x.id] && slotOf(d, x.id, loose) === slot);
+    if (first) d = moveGroup(d, gid, { into: null, before: ref("g", first.id) });
+  }
   return d;
 }
 

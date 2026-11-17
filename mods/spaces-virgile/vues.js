@@ -3,15 +3,18 @@
 //   menu      { of: "space" | "tab" | "group" | "header", id }   le clic droit
 //   machines  { group? }                                 le + : sur quelle machine ouvrir un space
 //   move      { space }                                  Déplacer vers un groupe
+//   movetab   { tab }                                    Déplacer un onglet vers un autre space (même machine)
 //   labels    { tab? }                                   les étiquettes (d'un terminal/onglet, ou toutes)
-//   group     { id? | parent? | withSpace? }             Nouveau groupe / Modifier le groupe
+//   group     { id? | parent? | withSpace? | withSpaces?, name? }  Nouveau groupe / Modifier le groupe
+//             (withSpaces : [cible, lâché], deux spaces de machines différentes glissés l'un sur l'autre)
 //   look      { space }                                  l'icône et la couleur de l'avatar d'un space
 
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { theme, props, closeOverlay, openOverlay, run, spaces, panes, machines, exec, shared, setShared } from "herdr";
 import * as A from "./arbre.js";
-import { data, save, PENDING, OPTIONS, openView, icon, chrome, avatar, avatarColor, tabTitle } from "./etat.js";
+import { data, save, PENDING, OPTIONS, MOVE_TAB, openView, icon, chrome, avatar, avatarColor, tabTitle } from "./etat.js";
+import { targetsFor } from "./deplacer.js";
 
 // Où est un space maintenant : le dossier de son premier terminal, sinon celui de sa création.
 function place(s) {
@@ -162,6 +165,8 @@ export class MenuView extends ListPopup {
         { label: "Nouveau sous-groupe…", icon: chrome("folder-plus"), disabled: deep, hint: deep ? "8 niveaux" : "", act: () => openView("group", { parent: id }) },
         { label: "Modifier le groupe…", icon: chrome("square-pen"), act: () => openView("group", { id }) },
         { label: g.folded ? "Déplier" : "Replier", icon: chrome(g.folded ? "chevron-down" : "chevron-right"), act: () => save(A.setFolded(d, id, !g.folded)) },
+        ...(!g.parent && d.after[id] ? [{ label: "Mettre en haut de la liste", icon: chrome("pin"),
+          act: () => { let x = A.placeAfter(data(), id, []); const first = x.children.root[0]; if (first && first !== A.ref("g", id)) x = A.moveGroup(x, id, { into: null, before: first }); save(x); } }] : []),
         ...(g.parent ? [{ label: "Remonter d'un niveau", icon: chrome("chevron-left"), act: () => save(A.moveGroup(d, id, { into: d.groups[g.parent]?.parent ?? null, after: A.ref("g", g.parent) })) }] : []),
         { label: "Dégrouper", icon: chrome("x"), sep: true, danger: true, act: () => save(A.removeGroup(d, id)) },
       ];
@@ -172,6 +177,8 @@ export class MenuView extends ListPopup {
       return [
         { label: "Étiquettes…", icon: icon("tag"), act: () => openView("labels", { tab: id }) },
         { label: "Renommer", icon: chrome("square-pen"), act: () => run("tab.rename", { id }) },
+        { label: "Déplacer vers un space…", icon: icon("folder-open"), disabled: !targetsFor(id).length,
+          hint: targetsFor(id).length ? "" : "aucun autre space ici", act: () => openView("movetab", { tab: id }) },
         { label: "Nouvel onglet dans ce space", icon: chrome("plus"), act: () => run("tab.new", { space: s.id }) },
         { label: "Fermer", icon: chrome("x"), sep: true, act: () => run("tab.close", { id }) },
       ];
@@ -243,6 +250,25 @@ export class MoveView extends ListPopup {
     };
     for (const r of d.children.root) walk(A.unref(r).id, 0);
     out.push({ label: "Nouveau groupe…", icon: chrome("folder-plus"), sep: true, act: () => openView("group", { withSpace: sid }) });
+    return out;
+  }
+}
+
+// Les spaces où un onglet peut aller : ceux de sa machine. Le choix est relayé à la barre (MOVE_TAB),
+// qui fait le déplacement : cet overlay se ferme avant la fin.
+export class MoveTabView extends ListPopup {
+  items() {
+    const d = data();
+    const tab = this.p.tab;
+    const list = targetsFor(tab);
+    const out = [{ title: "Déplacer l'onglet vers…" }];
+    if (!list.length) out.push({ label: "Aucun autre space sur cette machine", icon: chrome("minus"), disabled: true });
+    for (const s of list) {
+      const g = A.groupOfSpace(d, s.id);
+      out.push({ label: s.name, icon: chrome(s.machine ? "server" : "monitor"), swatch: avatarColor(theme(), s, d),
+        hint: g ? d.groups[g]?.name ?? "" : "",
+        act: () => { setShared(MOVE_TAB, { tab, to: s.id, at: Date.now() }); run("spaces-virgile.movetab"); } });
+    }
     return out;
   }
 }
@@ -381,7 +407,9 @@ export class GroupView {
     this.icon = g?.icon ?? "folder";
     this.color = g?.color ?? A.PALETTE[(Object.keys(d.groups).length * 5 + 6) % A.PALETTE.length];
     this.error = "";
-    const value = g?.name ?? "";
+    // Les spaces qui entrent dans le nouveau groupe : un (withSpace) ou deux (withSpaces, un glisser).
+    this.withs = this.p.withSpaces ?? (this.p.withSpace ? [this.p.withSpace] : []);
+    const value = g?.name ?? this.p.name ?? "";
     this.name = InputState.new({ placeholder: "Nom du groupe", value });
     this.hexIn = InputState.new({ placeholder: "#3e63dd", value: this.color });
     this.name.on("submit", (_e, cx) => { this.save(); cx.notify(); });
@@ -408,14 +436,15 @@ export class GroupView {
       if (!d.groups[this.p.id]) return closeOverlay(this.p.overlay);
       d = A.editGroup(d, this.p.id, { name, icon: this.icon, color });
     } else {
-      // Avec un space : le groupe se crée là où est le space (dans son groupe, sinon à la racine).
-      const parent = this.p.withSpace ? A.groupOfSpace(d, this.p.withSpace) : this.parent;
-      const after = this.p.withSpace && parent ? A.ref("s", this.p.withSpace) : null;
+      // Avec un space : le groupe se crée là où est le (premier) space (dans son groupe, sinon à la racine).
+      const first = this.withs[0];
+      const parent = first ? A.groupOfSpace(d, first) : this.parent;
+      const after = first && parent ? A.ref("s", first) : null;
       let gid;
       [d, gid] = A.addGroup(d, { name, icon: this.icon, color, parent, after });
       if (!gid) { this.error = "Pas plus de 8 niveaux."; return; }
       if (parent) d = A.setFolded(d, parent, false);
-      if (this.p.withSpace) d = A.moveSpace(d, this.p.withSpace, { into: gid });
+      for (const sid of this.withs) d = A.moveSpace(d, sid, { into: gid });
     }
     save(d);
     closeOverlay(this.p.overlay);
@@ -425,14 +454,17 @@ export class GroupView {
     const t = theme();
     const d = data();
     const close = () => closeOverlay(this.p.overlay);
-    const parent = this.p.withSpace ? A.groupOfSpace(d, this.p.withSpace) : this.parent;
+    const parent = this.withs[0] ? A.groupOfSpace(d, this.withs[0]) : this.parent;
     const inherited = parent ? A.colorOf(d, parent) : null;
+    const pair = this.withs.length > 1 ? this.withs.map((sid) => spaces().find((s) => s.id === sid)).filter(Boolean) : [];
     const shown = inherited ?? this.color;
     return v_flex().id("sv-group").track_focus(this.handle).size_full().min_h(0).p(18).bg(t.popover).text_size(12.8).text_color(t.foreground)
       .on_key_down((e, cx) => { if (e.key === "escape") { close(); cx.stop_propagation(); } })
       .child(h_flex().flex_none().items_center()
-        .child(div().flex_1().text_size(15).font_semibold().child(this.g ? "Modifier le groupe" : parent ? "Nouveau sous-groupe" : "Nouveau groupe"))
+        .child(div().flex_1().text_size(15).font_semibold().child(this.g ? "Modifier le groupe" : pair.length ? "Grouper ces deux spaces" : parent ? "Nouveau sous-groupe" : "Nouveau groupe"))
         .child(div().text_size(11).text_color(t.dim).child("Esc")))
+      .when(pair.length > 0, (el) => el.child(div().flex_none().pt(6).text_size(12).text_color(t.muted)
+        .child(`${pair.map((s) => `« ${s.name} » (${s.machine ?? "cet ordinateur"})`).join(" et ")}. Un space reste sur sa machine : le groupe les montre ensemble.`)))
       .child(div().flex_none().h(14))
       .child(label(t, "Nom"))
       .child(h_flex().flex_none().gap(8).items_center()
@@ -525,4 +557,4 @@ export class LookView {
   }
 }
 
-export const VIEWS = { menu: MenuView, machines: MachinesView, move: MoveView, labels: LabelsView, group: GroupView, look: LookView };
+export const VIEWS = { menu: MenuView, machines: MachinesView, move: MoveView, movetab: MoveTabView, labels: LabelsView, group: GroupView, look: LookView };

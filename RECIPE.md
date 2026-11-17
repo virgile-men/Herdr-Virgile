@@ -11,7 +11,11 @@ Left to right: a 301px sidebar, then the work column.
   - **Spaces** (`spaces-virgile`), fills the height (min 90px).
     - One flat list of spaces; the ☰ menu next to + can bring back one header per machine (off by default).
     - Under each space are its terminals: the first tab, or all of them once expanded. Each shows its machine as a pill, e.g. "lxc-perso · t6 · /root", or the laptop icon alone for this computer. Each can carry free labels (a name and a color), set by right-clicking the terminal.
+    - Each tab line shows its own git branch (not main/master; ahead/behind always) after its name, which keeps priority up to 150px. A tab in Trace mode takes the folder of the agent parked behind its chat pane (`herdr.chat` label). Space rows show no branch.
+    - A tab moves to another space on the same machine by dragging it onto that space, by right-click › "Déplacer vers un space…", or with `spaces-virgile.move-tab-next` / `move-tab-prev`. herdr-app has no command for it, so `deplacer.js` parks each terminal (`terminal.park`), waits until its `herdr.tab` label is gone, then labels it `herdr.space=<target> herdr.tab=tb<new id>` so herdr-app adopts it as a new tab, and renames that tab. A Trace tab's agent is relabeled the same way (and loses `herdr.chat=`); its old chat pane is closed only after adoption (lib/parked.js would end an agent with neither pane nor chat), then Trace is reopened like the pane-chat switch does, and `hc keep` restored. Labels follow the tab; the exact split layout does not.
     - Groups of spaces nest up to 8 levels deep. Each group has a name, a Lucide icon and a color, and sub-groups inherit the root group's color.
+    - A root group sits at the top, between two ungrouped spaces, or below them: drop it on the top or bottom half of a space. `after: { gid: [spaceId…] }` keeps up to 8 fallback spaces, nearest first, so the group keeps its place when one closes. Herdr's space order never changes. With the per-machine headers on, groups stay at the top.
+    - A space never leaves its machine. Dropping an ungrouped space on an ungrouped space of another machine opens "Grouper ces deux spaces". `spaces-virgile.group-homonyms` groups ungrouped spaces that share a name across machines.
     - Every space can have its own icon and color.
     - The + button asks which machine to open the new space on; each group has its own +.
   - **Agents** (`agents-virgile`) sits at the bottom of the sidebar, starting at 200px with a minimum of 42px.
@@ -91,7 +95,8 @@ Left to right: a 301px sidebar, then the work column.
   - `vault`, `contexte`, `cache`, `profile` and `alertes` are new. `profile` ports hp.js's context model and view.html's sequence layout from harness-profiler 0.2.2 (MIT, `LICENSE-harness-profiler`).
   - `pane-chat`, `chat`, `chat-models` and `chat-image` are Shepherdr's (MIT), in the Trace look of the author's fork, without the rest of Shepherdr. Their `addons.js` keeps only `chat` and `needs` on, which switches off voice, reactions, artifacts, browser and autopilot. Tasks, secrets and the coordinator have no switch; they stay out of reach because their tools (`herdr-task`, `herdr-secret`, `restart.sh`) aren't there. The task state icons are copied into `chat/tasks-icons/` and the artifacts icon into each mod.
 - **Shared state**:
-  - `shared("spaces-virgile")` and `shared("agents-virgile")` hold the group trees;
+  - `shared("spaces-virgile")` and `shared("agents-virgile")` hold the group trees (and, for Spaces, where root groups sit among spaces);
+  - `spaces-virgile.movetab` relays a tab move chosen in an overlay to the sidebar copy, since a closed overlay loses its tasks;
   - `agents-virgile.replie`, `.kanban.compact`, `.ranges.ouvert` and `.ranges.auto` hold the Agents settings;
   - `spaces-virgile.height` is published so that Agents can cap its height;
   - `profile.collapsed`, `profile.view` and `profile.all` hold the Profile settings;
